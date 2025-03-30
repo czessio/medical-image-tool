@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 # Add the parent directory to sys.path to make imports work
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 from utils.logging_setup import setup_logging
 
 def test_logging_creates_file():

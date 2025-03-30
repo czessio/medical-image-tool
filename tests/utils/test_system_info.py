@@ -3,7 +3,7 @@ import sys
 import numpy as np
 
 # Add the parent directory to sys.path to make imports work
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 from utils.system_info import get_system_info, get_optimal_device, estimate_image_memory
 
 def test_system_info_contains_required_fields():
