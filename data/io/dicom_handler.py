@@ -10,21 +10,15 @@ import numpy as np
 
 
 
-# try:
-#     import pydicom
-#     from pydicom.pixel_data_handlers.util import apply_window
-#     PYDICOM_AVAILABLE = True
-#     print("DEBUG: pydicom successfully imported in dicom_handler.py")
-# except ImportError as e:
-#     PYDICOM_AVAILABLE = False
-#     print(f"DEBUG: pydicom import failed: {e}")
-
 try:
-     import pydicom
-     from pydicom.pixel_data_handlers.util import apply_window
-     PYDICOM_AVAILABLE = True
-except ImportError:
-     PYDICOM_AVAILABLE = False
+    import pydicom
+    # Try a different approach instead of importing apply_window which doesn't exist
+    # from pydicom.pixel_data_handlers.util import apply_window
+    PYDICOM_AVAILABLE = True
+    print(f"DEBUG: pydicom successfully imported: {pydicom.__version__}")
+except ImportError as e:
+    PYDICOM_AVAILABLE = False
+    print(f"DEBUG: pydicom import failed: {e}")
 
 
 
