@@ -35,6 +35,11 @@ class TorchModel(BaseModel):
         super().__init__(model_path, device)
         self.torch_device = None
     
+    
+    
+    
+    
+    
     def _load_model(self):
         """
         Load the PyTorch model from the specified path.
@@ -45,16 +50,25 @@ class TorchModel(BaseModel):
         # Create model architecture (to be implemented by subclasses)
         self.model = self._create_model_architecture()
         
-        # Load weights
+        # Load weights if a path is provided
         if self.model_path:
-            state_dict = torch.load(self.model_path, map_location=self.torch_device)
-            self.model.load_state_dict(state_dict)
+            try:
+                state_dict = torch.load(self.model_path, map_location=self.torch_device)
+                self.model.load_state_dict(state_dict)
+            except Exception as e:
+                logger.error(f"Error loading model weights: {e}")
+                raise
         
         # Set model to evaluation mode
         self.model.eval()
         self.model.to(self.torch_device)
         
         logger.info(f"PyTorch model loaded on {self.device}")
+    
+    
+    
+    
+    
     
     def _create_model_architecture(self):
         """

@@ -34,8 +34,16 @@ class SimpleNetwork(nn.Module):
         return self.conv(x)
 
 class TestTorchModel(TorchModel):
+    def __init__(self, model_path=None, device=None):
+        super().__init__(model_path, device)
+        # Explicitly set torch_device here for testing
+        self.torch_device = torch.device(self.device)
+        
     def _create_model_architecture(self):
-        return SimpleNetwork()
+        model = SimpleNetwork()
+        # Ensure the model is on the same device
+        model = model.to(self.torch_device)
+        return model
 
 class TestTorchModelClass:
     def setup_method(self):
@@ -85,6 +93,15 @@ class TestTorchModelClass:
     def test_inference_and_postprocess(self):
         """Test inference and postprocessing."""
         model = TestTorchModel(model_path=self.model_path)
+        
+        # Make sure the model and weights are on the same device
+        if not hasattr(model, 'model') or model.model is None:
+            model._load_model()
+        
+        # Force everything to CPU to avoid device mismatch
+        model.device = 'cpu'
+        model.torch_device = torch.device('cpu')
+        model.model = model.model.to('cpu')
         
         # Run through the pipeline
         preprocessed = model.preprocess(self.test_image)

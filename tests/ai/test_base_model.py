@@ -10,6 +10,11 @@ from ai.base_model import BaseModel
 
 # Create a minimal concrete implementation for testing
 class TestModel(BaseModel):
+    def __init__(self, model_path=None, device=None):
+        super().__init__(model_path, device)
+        # Remove this line - the test expects initialized to be False initially
+        # self.initialized = True
+    
     def _load_model(self):
         self.model = "test_model"
     

@@ -12,6 +12,10 @@ from ai.model_registry import ModelRegistry
 
 # Create test models with different operations
 class AddOneModel(BaseModel):
+    def __init__(self, model_path=None, device=None):
+        super().__init__(model_path, device)
+        self.initialized = True
+    
     def _load_model(self):
         pass
     
@@ -25,6 +29,10 @@ class AddOneModel(BaseModel):
         return model_output
 
 class MultiplyTwoModel(BaseModel):
+    def __init__(self, model_path=None, device=None):
+        super().__init__(model_path, device)
+        self.initialized = True
+    
     def _load_model(self):
         pass
     

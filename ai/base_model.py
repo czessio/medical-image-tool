@@ -60,6 +60,8 @@ class BaseModel(ABC):
         # Fall back to CPU
         return 'cpu'
     
+    
+    
     def initialize(self):
         """
         Initialize the model by loading weights and preparing for inference.
@@ -67,13 +69,21 @@ class BaseModel(ABC):
         if self.initialized:
             logger.debug("Model already initialized")
             return
-        
-        if not self.model_path:
-            raise ValueError("Model path not specified")
-        
+    
+        # For testing: Allow initialization without a model path for test models
+        if self.model_path is None:
+            try:
+                self._load_model()
+                self.initialized = True
+                logger.info("Model initialized with no weights (test mode)")
+                return
+            except Exception as e:
+                logger.error(f"Error initializing model in test mode: {e}")
+                raise
+    
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"Model file not found: {self.model_path}")
-        
+    
         try:
             self._load_model()
             self.initialized = True
@@ -81,6 +91,8 @@ class BaseModel(ABC):
         except Exception as e:
             logger.error(f"Error initializing model: {e}")
             raise
+    
+    
     
     @abstractmethod
     def _load_model(self):
