@@ -33,11 +33,16 @@ class SimpleNetwork(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
-class TestTorchModel(TorchModel):
+# In the TestTorchModel class, update the __init__ method like this:
+class MockTorchModel(TorchModel):
     def __init__(self, model_path=None, device=None):
         super().__init__(model_path, device)
-        # Explicitly set torch_device here for testing
-        self.torch_device = torch.device(self.device)
+        # Explicitly set torch_device with the correct device index
+        # This is what PyTorch does internally, so we need to match it
+        if self.device == 'cuda':
+            self.torch_device = torch.device('cuda:0')
+        else:
+            self.torch_device = torch.device(self.device)
         
     def _create_model_architecture(self):
         model = SimpleNetwork()
@@ -74,13 +79,13 @@ class TestTorchModelClass:
     
     def test_initialization(self):
         """Test initialization with a valid model file."""
-        model = TestTorchModel(model_path=self.model_path)
+        model = MockTorchModel(model_path=self.model_path)
         assert model.initialized == True
         assert model.torch_device is not None
     
     def test_preprocess(self):
         """Test preprocessing logic for PyTorch."""
-        model = TestTorchModel(model_path=self.model_path)
+        model = MockTorchModel(model_path=self.model_path)
         
         # Preprocess the test image
         tensor = model.preprocess(self.test_image)
@@ -92,7 +97,7 @@ class TestTorchModelClass:
     
     def test_inference_and_postprocess(self):
         """Test inference and postprocessing."""
-        model = TestTorchModel(model_path=self.model_path)
+        model = MockTorchModel(model_path=self.model_path)
         
         # Make sure the model and weights are on the same device
         if not hasattr(model, 'model') or model.model is None:

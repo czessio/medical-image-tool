@@ -11,7 +11,7 @@ from ai.model_registry import ModelRegistry
 from ai.base_model import BaseModel
 
 # Create some test model classes
-class TestModel1(BaseModel):
+class MockTestModel1(BaseModel):
     def _load_model(self):
         pass
     
@@ -24,7 +24,7 @@ class TestModel1(BaseModel):
     def postprocess(self, model_output, original_image=None):
         return model_output
 
-class TestModel2(BaseModel):
+class MockTestModel2(BaseModel):
     def _load_model(self):
         pass
     
@@ -44,8 +44,8 @@ class TestModelRegistry:
         ModelRegistry._registry = {}
         
         # Register test models
-        ModelRegistry.register("test_model1", TestModel1)
-        ModelRegistry.register("test_model2", TestModel2)
+        ModelRegistry.register("test_model1", MockTestModel1)
+        ModelRegistry.register("test_model2", MockTestModel2)
     
     def test_register_and_get(self):
         """Test registering and retrieving models."""
@@ -57,8 +57,8 @@ class TestModelRegistry:
         model_class1 = ModelRegistry.get("test_model1")
         model_class2 = ModelRegistry.get("test_model2")
         
-        assert model_class1 == TestModel1
-        assert model_class2 == TestModel2
+        assert model_class1 == MockTestModel1
+        assert model_class2 == MockTestModel2
         
         # Try getting non-existent model
         assert ModelRegistry.get("non_existent") is None
@@ -69,8 +69,8 @@ class TestModelRegistry:
         model1 = ModelRegistry.create("test_model1")
         model2 = ModelRegistry.create("test_model2")
         
-        assert isinstance(model1, TestModel1)
-        assert isinstance(model2, TestModel2)
+        assert isinstance(model1, MockTestModel1)
+        assert isinstance(model2, MockTestModel2)
         
         # Try creating non-existent model
         assert ModelRegistry.create("non_existent") is None

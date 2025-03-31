@@ -53,7 +53,7 @@ class TorchModel(BaseModel):
         # Load weights if a path is provided
         if self.model_path:
             try:
-                state_dict = torch.load(self.model_path, map_location=self.torch_device)
+                state_dict = torch.load(self.model_path, map_location=self.torch_device, weights_only=True)
                 self.model.load_state_dict(state_dict)
             except Exception as e:
                 logger.error(f"Error loading model weights: {e}")
@@ -109,7 +109,8 @@ class TorchModel(BaseModel):
         elif len(tensor.shape) == 2:  # [H, W]
             tensor = tensor.unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
             
-        # Move to device
+        # Move to device - use to() with the device object not the string
+        # This ensures the device type and index match exactly
         tensor = tensor.to(self.torch_device)
         
         return tensor

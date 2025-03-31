@@ -9,7 +9,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from ai.base_model import BaseModel
 
 # Create a minimal concrete implementation for testing
-class TestModel(BaseModel):
+class MockTestModel(BaseModel):
     def __init__(self, model_path=None, device=None):
         super().__init__(model_path, device)
         # Remove this line - the test expects initialized to be False initially
@@ -34,23 +34,23 @@ class TestBaseModel:
     
     def test_initialization(self):
         """Test model initialization without a path."""
-        model = TestModel()
+        model = MockTestModel()
         assert model.initialized == False
         assert model.device in ['cpu', 'cuda']
     
     def test_device_selection(self):
         """Test device selection logic."""
         # Force CPU
-        model = TestModel(device='cpu')
+        model = MockTestModel(device='cpu')
         assert model.device == 'cpu'
         
         # Auto should return a valid device
-        model = TestModel(device='auto')
+        model = MockTestModel(device='auto')
         assert model.device in ['cpu', 'cuda']
     
     def test_process_pipeline(self):
         """Test the full process pipeline."""
-        model = TestModel()
+        model = MockTestModel()
         model.initialize()
         
         # Process the test image
@@ -62,7 +62,7 @@ class TestBaseModel:
     
     def test_callable_interface(self):
         """Test calling the model directly."""
-        model = TestModel()
+        model = MockTestModel()
         model.initialize()
         
         # Call the model directly
