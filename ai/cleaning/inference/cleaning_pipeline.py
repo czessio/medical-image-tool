@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ....ai.inference_pipeline import InferencePipeline
-from ....ai.model_registry import ModelRegistry
-from ....utils.config import Config
+from ai.inference_pipeline import InferencePipeline
+from ai.model_registry import ModelRegistry
+from utils.config import Config
 
 logger = logging.getLogger(__name__)
 
