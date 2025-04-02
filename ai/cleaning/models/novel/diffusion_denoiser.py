@@ -16,8 +16,8 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from ....torch_model import TorchModel
-from ....model_registry import ModelRegistry
+from ai.torch_model import TorchModel
+from ai.model_registry import ModelRegistry
 
 logger = logging.getLogger(__name__)
 
