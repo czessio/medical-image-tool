@@ -45,6 +45,21 @@ class ComparisonView(QWidget):
         
         self._init_ui()
     
+    
+    
+    
+    
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
     def _init_ui(self):
         """Initialize the user interface."""
         # Main layout
@@ -112,6 +127,59 @@ class ComparisonView(QWidget):
         
         # Update UI for initial mode
         self._update_ui_for_mode()
+    
+    
+        self.original_viewer.graphics_view.horizontalScrollBar().valueChanged.connect(
+        self.sync_horizontal_scroll
+        )
+        self.original_viewer.graphics_view.verticalScrollBar().valueChanged.connect(
+            self.sync_vertical_scroll
+        )
+        self.enhanced_viewer.graphics_view.horizontalScrollBar().valueChanged.connect(
+            self.sync_horizontal_scroll
+        )
+        self.enhanced_viewer.graphics_view.verticalScrollBar().valueChanged.connect(
+            self.sync_vertical_scroll
+        )
+    
+    
+    
+    
+    def sync_horizontal_scroll(self, value):
+        """Synchronize horizontal scrolling between viewers."""
+        if self.comparison_mode == ComparisonMode.SIDE_BY_SIDE:
+            sender = self.sender()
+            if sender == self.original_viewer.graphics_view.horizontalScrollBar():
+                self.enhanced_viewer.graphics_view.horizontalScrollBar().setValue(value)
+            elif sender == self.enhanced_viewer.graphics_view.horizontalScrollBar():
+                self.original_viewer.graphics_view.horizontalScrollBar().setValue(value)
+
+    def sync_vertical_scroll(self, value):
+        """Synchronize vertical scrolling between viewers."""
+        if self.comparison_mode == ComparisonMode.SIDE_BY_SIDE:
+            sender = self.sender()
+            if sender == self.original_viewer.graphics_view.verticalScrollBar():
+                self.enhanced_viewer.graphics_view.verticalScrollBar().setValue(value)
+            elif sender == self.enhanced_viewer.graphics_view.verticalScrollBar():
+                self.original_viewer.graphics_view.verticalScrollBar().setValue(value)
+
+    def sync_zoom(self, factor, viewer):
+        """Synchronize zoom between viewers."""
+        if self.comparison_mode == ComparisonMode.SIDE_BY_SIDE:
+            if viewer == self.original_viewer:
+                self.enhanced_viewer.zoom_factor = factor
+                self.enhanced_viewer._update_zoom_label()
+            else:
+                self.original_viewer.zoom_factor = factor
+                self.original_viewer._update_zoom_label()
+    
+    
+    
+    
+    
+    
+    
+    
     
     def set_images(self, original, enhanced, original_metadata=None, enhanced_metadata=None):
         """
