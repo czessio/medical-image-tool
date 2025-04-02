@@ -260,13 +260,16 @@ class ImageViewer(QWidget):
         if obj is self.graphics_view.viewport():
             if event.type() == QEvent.Type.MouseMove:
                 self.handle_mouse_move(event)
-                # Add this line to update ongoing annotations
                 self.update_current_annotation()
             elif event.type() == QEvent.Type.MouseButtonPress:
                 self.handle_mouse_press(event)
             elif event.type() == QEvent.Type.MouseButtonRelease:
                 self.handle_mouse_release(event)
-        
+            
+            # Add wheel event handling
+            elif event.type() == QEvent.Type.Wheel:
+                self._wheel_event(event)
+    
         return super().eventFilter(obj, event)
     
     def handle_mouse_move(self, event):
@@ -310,13 +313,7 @@ class ImageViewer(QWidget):
                 ellipse_item = QGraphicsEllipseItem(QRectF(scene_pos, scene_pos))
                 ellipse_item.setPen(self.annotation_pen)
                 self.scene.addItem(ellipse_item)
-                self.current_annotation_item = AnnotationItem(ellipse_item, AnnotationMode.ELLIPSE)
-                
-                
-                
-                
-                
-                
+                self.current_annotation_item = AnnotationItem(ellipse_item, AnnotationMode.ELLIPSE)               
                 
             elif self.annotation_mode == AnnotationMode.LINE or self.annotation_mode == AnnotationMode.MEASURE:
                 line_item = QGraphicsLineItem(QLineF(
@@ -338,13 +335,7 @@ class ImageViewer(QWidget):
                 else:
                     self.current_annotation_item = AnnotationItem(line_item, AnnotationMode.LINE)
                     
-                    
-                    
-                    
-                    
-                    
-                    
-                    
+                                      
             elif self.annotation_mode == AnnotationMode.TEXT:
                 # Create a text item
                 text = "Text"  # Default text, could be replaced with a dialog
