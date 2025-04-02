@@ -8,11 +8,12 @@ import os
 import logging
 from pathlib import Path
 import numpy as np
+
 from PyQt6.QtWidgets import (
     QWidget, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QVBoxLayout, QHBoxLayout, QLabel, QSlider, QToolBar, 
     QGraphicsRectItem, QGraphicsLineItem, QGraphicsEllipseItem, QGraphicsPathItem,
-    QGraphicsTextItem, QPushButton
+    QGraphicsTextItem, QPushButton, QColorDialog
 )
 from PyQt6.QtGui import (
     QPixmap, QImage, QPainter, QColor, QPen, QAction, QIcon, 
@@ -20,9 +21,10 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtCore import (
     Qt, QRectF, QPointF, pyqtSignal, QSize, QEvent, QLine, 
-    QObject, QTimer
+    QObject, QTimer, QLineF
 )
 
+from PyQt6.QtWidgets import QGraphicsTextItem
 from data.processing.transforms import resize_image
 from data.processing.visualization import draw_info_overlay
 
@@ -255,15 +257,16 @@ class ImageViewer(QWidget):
         self.tracking_timer.start(100)  # Update every 100 ms
     
     def eventFilter(self, obj, event):
-        """Handle events for the graphics view."""
         if obj is self.graphics_view.viewport():
             if event.type() == QEvent.Type.MouseMove:
                 self.handle_mouse_move(event)
+                # Add this line to update ongoing annotations
+                self.update_current_annotation()
             elif event.type() == QEvent.Type.MouseButtonPress:
                 self.handle_mouse_press(event)
             elif event.type() == QEvent.Type.MouseButtonRelease:
                 self.handle_mouse_release(event)
-            
+        
         return super().eventFilter(obj, event)
     
     def handle_mouse_move(self, event):
@@ -280,12 +283,11 @@ class ImageViewer(QWidget):
             # Pan the view
             delta = scene_pos - self.start_point
             self.graphics_view.horizontalScrollBar().setValue(
-                self.graphics_view.horizontalScrollBar().value() - delta.x()
+                int(self.graphics_view.horizontalScrollBar().value() - delta.x())
             )
             self.graphics_view.verticalScrollBar().setValue(
-                self.graphics_view.verticalScrollBar().value() - delta.y()
+                int(self.graphics_view.verticalScrollBar().value() - delta.y())
             )
-            self.start_point = scene_pos
     
     def handle_mouse_press(self, event):
         """Handle mouse press events."""
@@ -309,26 +311,22 @@ class ImageViewer(QWidget):
                 ellipse_item.setPen(self.annotation_pen)
                 self.scene.addItem(ellipse_item)
                 self.current_annotation_item = AnnotationItem(ellipse_item, AnnotationMode.ELLIPSE)
+                
+                
+                
+                
+                
+                
+                
             elif self.annotation_mode == AnnotationMode.LINE or self.annotation_mode == AnnotationMode.MEASURE:
-                # Create a new line
-                line_item = QGraphicsLineItem(QLine(
-                    int(scene_pos.x()), int(scene_pos.y()),
-                    int(scene_pos.x()), int(scene_pos.y())
+                line_item = QGraphicsLineItem(QLineF(
+                    scene_pos.x(), scene_pos.y(),
+                    scene_pos.x(), scene_pos.y()
                 ))
-                
-                
-                
                 line_item.setPen(self.annotation_pen)
                 self.scene.addItem(line_item)
-                
-                line_item = QGraphicsLineItem(
-                scene_pos.x(), scene_pos.y(),
-                scene_pos.x(), scene_pos.y()
-            )
-                
-                
-                
-                # For measurement, add a text item for the length
+
+                # For measurement, add a text item
                 if self.annotation_mode == AnnotationMode.MEASURE:
                     text_item = QGraphicsTextItem("0 px")
                     text_item.setPos(scene_pos + QPointF(5, 5))
@@ -339,6 +337,14 @@ class ImageViewer(QWidget):
                     )
                 else:
                     self.current_annotation_item = AnnotationItem(line_item, AnnotationMode.LINE)
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
             elif self.annotation_mode == AnnotationMode.TEXT:
                 # Create a text item
                 text = "Text"  # Default text, could be replaced with a dialog
@@ -352,6 +358,11 @@ class ImageViewer(QWidget):
                 self.annotations.append(self.current_annotation_item)
                 self.current_annotation_item = None
                 self.annotationAdded.emit(self.annotations[-1])
+    
+    
+    
+    
+    
     
     def handle_mouse_release(self, event):
         """Handle mouse release events."""
