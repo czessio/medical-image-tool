@@ -102,7 +102,7 @@ class DnCNNDenoiser(TorchModel):
     estimate the noise component and then subtract it from the noisy image.
     """
     
-    def __init__(self, model_path=None, device=None, num_layers=17):
+    def __init__(self, model_path=None, device=None, num_layers=17, in_channels=1, out_channels=1):
         """
         Initialize the DnCNN denoiser model.
         
@@ -110,31 +110,36 @@ class DnCNNDenoiser(TorchModel):
             model_path: Path to model weights file
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
             num_layers: Number of layers in the DnCNN model
+            in_channels: Number of input channels (1 for grayscale, 3 for RGB)
+            out_channels: Number of output channels (usually same as in_channels)
         """
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch is required but not installed")
         
         self.num_layers = num_layers
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        
         super().__init__(model_path, device)
     
     def _create_model_architecture(self):
         """Create the DnCNN model architecture."""
-        # For medical images, typically grayscale input/output
         model = DnCNN(
-            in_channels=1,
-            out_channels=1,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
             num_layers=self.num_layers,
             features=64
         )
         
         return model
     
-    def preprocess(self, image):
+    def preprocess(self, image, noise_level=None):
         """
         Preprocess the input image for the DnCNN model.
         
         Args:
             image: Input image as numpy array
+            noise_level: Optional noise level to add for testing
             
         Returns:
             torch.Tensor: Preprocessed image tensor
@@ -142,9 +147,19 @@ class DnCNNDenoiser(TorchModel):
         # Use parent preprocessing but ensure channels are correct
         tensor = super().preprocess(image)
         
-        # If input is RGB, convert to grayscale (average channels)
-        if tensor.shape[1] == 3:
+        # If input is RGB but model expects grayscale, convert to grayscale
+        if tensor.shape[1] == 3 and self.in_channels == 1:
             tensor = tensor.mean(dim=1, keepdim=True)
+        
+        # If input is grayscale but model expects RGB, repeat channels
+        if tensor.shape[1] == 1 and self.in_channels == 3:
+            tensor = tensor.repeat(1, 3, 1, 1)
+        
+        # Add synthetic noise for testing if specified
+        if noise_level is not None:
+            noise = torch.randn_like(tensor) * noise_level
+            tensor = tensor + noise
+            tensor = torch.clamp(tensor, 0, 1)
         
         return tensor
     
@@ -173,6 +188,26 @@ class DnCNNDenoiser(TorchModel):
             numpy.ndarray: Denoised image as numpy array
         """
         return super().postprocess(model_output, original_image)
+    
+    def process(self, image, noise_level=None):
+        """
+        Process an image with the DnCNN model.
+        
+        Args:
+            image: Input image as numpy array
+            noise_level: Optional noise level to add for testing
+            
+        Returns:
+            numpy.ndarray: Denoised output image
+        """
+        if not self.initialized:
+            self.initialize()
+        
+        preprocessed = self.preprocess(image, noise_level)
+        output = self.inference(preprocessed)
+        result = self.postprocess(output, image)
+        
+        return result
 
 # Register the model
 ModelRegistry.register("dncnn_denoiser", DnCNNDenoiser)

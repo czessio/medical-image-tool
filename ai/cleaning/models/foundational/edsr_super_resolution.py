@@ -140,7 +140,7 @@ class EDSRSuperResolution(TorchModel):
     high-quality image upscaling.
     """
     
-    def __init__(self, model_path=None, device=None, scale_factor=2, n_resblocks=16, n_feats=64):
+    def __init__(self, model_path=None, device=None, scale_factor=2, n_resblocks=16, n_feats=64, in_channels=1, out_channels=1):
         """
         Initialize the EDSR super-resolution model.
         
@@ -150,6 +150,8 @@ class EDSRSuperResolution(TorchModel):
             scale_factor: Upscaling factor (2, 3, or 4)
             n_resblocks: Number of residual blocks
             n_feats: Number of feature maps
+            in_channels: Number of input channels (1 for grayscale, 3 for RGB)
+            out_channels: Number of output channels (usually same as in_channels)
         """
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch is required but not installed")
@@ -157,14 +159,15 @@ class EDSRSuperResolution(TorchModel):
         self.scale_factor = scale_factor
         self.n_resblocks = n_resblocks
         self.n_feats = n_feats
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         super().__init__(model_path, device)
     
     def _create_model_architecture(self):
         """Create the EDSR model architecture."""
-        # For medical images, typically grayscale input/output
         model = EDSR(
-            in_channels=1,
-            out_channels=1,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
             n_feats=self.n_feats,
             n_resblocks=self.n_resblocks,
             scale=self.scale_factor,
@@ -186,9 +189,13 @@ class EDSRSuperResolution(TorchModel):
         # Use parent preprocessing but ensure channels are correct
         tensor = super().preprocess(image)
         
-        # If input is RGB, convert to grayscale (average channels)
-        if tensor.shape[1] == 3:
+        # If input is RGB but model expects grayscale, convert to grayscale
+        if tensor.shape[1] == 3 and self.in_channels == 1:
             tensor = tensor.mean(dim=1, keepdim=True)
+        
+        # If input is grayscale but model expects RGB, repeat channels
+        if tensor.shape[1] == 1 and self.in_channels == 3:
+            tensor = tensor.repeat(1, 3, 1, 1)
         
         return tensor
     
@@ -217,6 +224,25 @@ class EDSRSuperResolution(TorchModel):
             numpy.ndarray: Super-resolved image as numpy array
         """
         return super().postprocess(model_output, original_image)
+    
+    def process(self, image):
+        """
+        Process an image with the EDSR model.
+        
+        Args:
+            image: Input image as numpy array
+            
+        Returns:
+            numpy.ndarray: Super-resolved output image
+        """
+        if not self.initialized:
+            self.initialize()
+        
+        preprocessed = self.preprocess(image)
+        output = self.inference(preprocessed)
+        result = self.postprocess(output, image)
+        
+        return result
 
 # Register the model
 ModelRegistry.register("edsr_super_resolution", EDSRSuperResolution)

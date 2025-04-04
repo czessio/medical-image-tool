@@ -143,7 +143,7 @@ class UNetArtifactRemoval(TorchModel):
     its encoder-decoder structure with skip connections.
     """
     
-    def __init__(self, model_path=None, device=None, n_channels=64, bilinear=True):
+    def __init__(self, model_path=None, device=None, n_channels=64, bilinear=True, in_channels=1, out_channels=1):
         """
         Initialize the U-Net artifact removal model.
         
@@ -152,20 +152,23 @@ class UNetArtifactRemoval(TorchModel):
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
             n_channels: Number of channels in the first layer
             bilinear: Whether to use bilinear upsampling or transposed convolutions
+            in_channels: Number of input channels (1 for grayscale, 3 for RGB)
+            out_channels: Number of output channels (usually same as in_channels)
         """
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch is required but not installed")
         
         self.n_channels = n_channels
         self.bilinear = bilinear
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         super().__init__(model_path, device)
     
     def _create_model_architecture(self):
         """Create the U-Net model architecture."""
-        # For medical images, typically grayscale input/output
         model = UNet(
-            in_channels=1,
-            out_channels=1,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
             n_channels=self.n_channels,
             bilinear=self.bilinear
         )
@@ -185,9 +188,13 @@ class UNetArtifactRemoval(TorchModel):
         # Use parent preprocessing but ensure channels are correct
         tensor = super().preprocess(image)
         
-        # If input is RGB, convert to grayscale (average channels)
-        if tensor.shape[1] == 3:
+        # If input is RGB but model expects grayscale, convert to grayscale
+        if tensor.shape[1] == 3 and self.in_channels == 1:
             tensor = tensor.mean(dim=1, keepdim=True)
+        
+        # If input is grayscale but model expects RGB, repeat channels
+        if tensor.shape[1] == 1 and self.in_channels == 3:
+            tensor = tensor.repeat(1, 3, 1, 1)
         
         return tensor
     
@@ -216,6 +223,25 @@ class UNetArtifactRemoval(TorchModel):
             numpy.ndarray: Artifact-free image as numpy array
         """
         return super().postprocess(model_output, original_image)
+    
+    def process(self, image):
+        """
+        Process an image with the U-Net artifact removal model.
+        
+        Args:
+            image: Input image as numpy array
+            
+        Returns:
+            numpy.ndarray: Artifact-free output image
+        """
+        if not self.initialized:
+            self.initialize()
+        
+        preprocessed = self.preprocess(image)
+        output = self.inference(preprocessed)
+        result = self.postprocess(output, image)
+        
+        return result
 
 # Register the model
 ModelRegistry.register("unet_artifact_removal", UNetArtifactRemoval)
