@@ -13,27 +13,65 @@ class Config:
     # Default configuration values
     DEFAULT_CONFIG = {
         "models": {
+            "use_novel": True,
             "denoising": {
-                "enabled": True,
-                "model_path": "weights/cleaning/denoising_model.pth",
+                "foundational": {
+                    "dncnn_denoiser": {
+                        "enabled": True,
+                        "model_path": "weights/foundational/dncnn_denoiser.pth"
+                    }
+                },
+                "novel": {
+                    "novel_diffusion_denoiser": {
+                        "enabled": True,
+                        "model_path": "weights/novel/diffusion_denoiser.pth"
+                    }
+                },
                 "device": "auto"  # auto, cpu, cuda
             },
             "super_resolution": {
-                "enabled": True,
-                "model_path": "weights/cleaning/super_resolution_model.pth",
+                "foundational": {
+                    "edsr_super_resolution": {
+                        "enabled": True,
+                        "model_path": "weights/foundational/edsr_x2.pth"
+                    }
+                },
+                "novel": {
+                    "novel_restormer": {
+                        "enabled": True,
+                        "model_path": "weights/novel/swinir_x2.pth"
+                    }
+                },
                 "device": "auto",
                 "scale_factor": 2  # 2x upscaling by default
             },
             "artifact_removal": {
-                "enabled": True,
-                "model_path": "weights/cleaning/artifact_removal_model.pth",
+                "foundational": {
+                    "unet_artifact_removal": {
+                        "enabled": True,
+                        "model_path": "weights/foundational/unet_artifact_removal.pth"
+                    }
+                },
+                "novel": {
+                    "novel_stylegan_artifact_removal": {
+                        "enabled": True,
+                        "model_path": "weights/novel/stylegan_artifact_removal.pth"
+                    }
+                },
+                "device": "auto"
+            },
+            "segmentation": {
+                "enabled": False,
+                "model_path": "weights/segmentation/unet_segmentation.pth",
                 "device": "auto"
             }
         },
         "paths": {
             "last_open_dir": "",
             "export_dir": "",
-            "temp_dir": "temp"
+            "temp_dir": "temp",
+            "model_weights_dir": "weights",
+            "cache_dir": ".cache"
         },
         "gui": {
             "theme": "dark",
@@ -43,11 +81,12 @@ class Config:
         "processing": {
             "preview_quality": "medium",  # low, medium, high
             "use_threading": True,
-            "max_image_dimension": 2048  # Limit size for preview processing
+            "max_image_dimension": 2048,  # Limit size for preview processing
+            "use_cuda_if_available": True,
+            "cache_processed_images": True,
+            "auto_download_models": True  # Automatically download missing models
         }
     }
-    
-    
     
     def __init__(self, config_path=None):
         """Initialize configuration with optional path to config file."""
@@ -65,9 +104,8 @@ class Config:
         # Load or create config
         self.config = self.load()
         
+        # Save config to ensure all defaults are written
         self.save()
-    
-    
     
     def load(self):
         """Load configuration from file or create default if it doesn't exist."""
@@ -136,3 +174,62 @@ class Config:
                 loaded[key] = value
             elif isinstance(value, dict) and isinstance(loaded[key], dict):
                 self._merge_configs(value, loaded[key])
+                
+    def get_model_path(self, model_type, model_name, use_novel=None):
+        """
+        Get the path to a model's weights file.
+        
+        Args:
+            model_type: Type of model (denoising, super_resolution, artifact_removal)
+            model_name: Name of the model
+            use_novel: Whether to use novel models (None to use config setting)
+            
+        Returns:
+            str: Path to the model weights file
+        """
+        if use_novel is None:
+            use_novel = self.get("models.use_novel", True)
+            
+        category = "novel" if use_novel else "foundational"
+        
+        # First check if this exact model name exists in the config
+        model_path = self.get(f"models.{model_type}.{category}.{model_name}.model_path")
+        
+        if model_path:
+            return model_path
+            
+        # If not found, return a default path based on the model name and category
+        weights_dir = self.get("paths.model_weights_dir", "weights")
+        return f"{weights_dir}/{category}/{model_name}.pth"
+    
+    def set_model_path(self, model_type, model_name, model_path, use_novel=None):
+        """
+        Set the path to a model's weights file.
+        
+        Args:
+            model_type: Type of model (denoising, super_resolution, artifact_removal)
+            model_name: Name of the model
+            model_path: Path to the model weights file
+            use_novel: Whether this is a novel model (None to use model's current category)
+        """
+        if use_novel is None:
+            # Check current category
+            if self.get(f"models.{model_type}.novel.{model_name}"):
+                category = "novel"
+            elif self.get(f"models.{model_type}.foundational.{model_name}"):
+                category = "foundational"
+            else:
+                # Default to novel if model doesn't exist yet
+                category = "novel" if self.get("models.use_novel", True) else "foundational"
+        else:
+            category = "novel" if use_novel else "foundational"
+        
+        # Ensure the model entry exists
+        if not self.get(f"models.{model_type}.{category}.{model_name}"):
+            self.set(f"models.{model_type}.{category}.{model_name}", {})
+        
+        # Set the model path
+        self.set(f"models.{model_type}.{category}.{model_name}.model_path", model_path)
+        
+        # Enable the model by default
+        self.set(f"models.{model_type}.{category}.{model_name}.enabled", True)
