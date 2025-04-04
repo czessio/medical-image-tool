@@ -1,0 +1,23 @@
+# Ignore all PyTorch model weights
+*.pth
+
+# Ignore backup or temp files
+*.bak
+*.tmp
+*.log
+
+# Ignore generated test output images
+*.png
+
+# Ignore Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VS Code project folder
+.vscode/
+
+# OS-specific
+.DS_Store
+Thumbs.db

@@ -1,0 +1,8 @@
+{
+  "original_file": "RealESRGAN_x2.pth",
+  "input_channels": 12,
+  "input_type": "special",
+  "adaptation_required": true,
+  "adaptation_method": "channel_adapter",
+  "notes": "This model requires a special input preprocessing step to convert 3-channel RGB to the expected input format"
+}

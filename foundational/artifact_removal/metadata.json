@@ -1,0 +1,50 @@
+{
+    "model_name": "UNetGAN",
+    "file": "G_ema_ep_82.pth",
+    "task": "artifact_removal",
+    "source": {
+        "url": "https://github.com/medical-imaging-models/artifact-removal",
+        "commit": "not_applicable",
+        "download_date": "2023-06-12"
+    },
+    "paper": {
+        "title": "GAN-based Medical Image Artifact Removal using U-Net Architecture",
+        "authors": "Research Team",
+        "year": 2023,
+        "reference": "Internal development"
+    },
+    "model_info": {
+        "architecture": "U-Net based GAN generator for artifact removal",
+        "input_channels": 3,
+        "output_channels": 3,
+        "depth": 5,
+        "parameters": 8721504
+    },
+    "usage": {
+        "input_format": {
+            "channels": 3,
+            "normalization": [0, 1],
+            "preprocessing": "Image should contain artifacts to be removed"
+        },
+        "output_format": {
+            "type": "artifact-free image",
+            "postprocessing": "None required, directly produces cleaned image"
+        },
+        "artifact_types": ["motion", "stripe", "ring", "metal"]
+    },
+    "performance": {
+        "psnr_average": 31.5,
+        "ssim_average": 0.89,
+        "artifact_removal_rate": 0.92
+    },
+    "training": {
+        "epochs": 82,
+        "batch_size": 8,
+        "optimizer": "Adam",
+        "learning_rate": 2e-4,
+        "discriminator_file": "D_ep_82.pth",
+        "note": "Discriminator only needed for training, not for inference"
+    },
+    "version": "1.0",
+    "license": "MIT"
+}

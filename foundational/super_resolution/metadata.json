@@ -1,0 +1,52 @@
+{
+  "model_name": "RealESRGAN",
+  "file": "RealESRGAN_x4.pth",
+  "task": "super_resolution",
+  "source": {
+    "url": "https://github.com/xinntao/Real-ESRGAN",
+    "commit": "5ca1078535923d485892edb0a7d9f95e5e9d7424",
+    "download_date": "2023-05-20"
+  },
+  "paper": {
+    "title": "Real-ESRGAN: Training Real-World Blind Super-Resolution with Pure Synthetic Data",
+    "authors": "Wang, X., Xie, L., Dong, C., & Shan, Y.",
+    "year": 2021,
+    "arxiv": "2107.10833"
+  },
+  "model_info": {
+    "architecture": "GAN-based super-resolution network with RRDB blocks",
+    "input_channels": 3,
+    "output_channels": 3,
+    "scale_factor": 4,
+    "parameters": 16719378
+  },
+  "usage": {
+    "input_format": {
+      "channels": 3,
+      "normalization": [
+        0,
+        1
+      ],
+      "preprocessing": "None required, works with RGB images"
+    },
+    "output_format": {
+      "type": "upscaled image",
+      "postprocessing": "None required, directly produces high-resolution output"
+    },
+    "recommended_downscale_method": "bicubic"
+  },
+  "performance": {
+    "psnr_average": 29.12,
+    "ssim_average": 0.824
+  },
+  "variant_files": {
+    "x2": "RealESRGAN_x2.pth",
+    "x4": "RealESRGAN_x4.pth",
+    "x8": "RealESRGAN_x8.pth"
+  },
+  "version": "1.0",
+  "license": "BSD-3-Clause",
+  "requires_adapter": true,
+  "adapter_config": "realergan_x2_adapter_config.json",
+  "input_channels": 12
+}
