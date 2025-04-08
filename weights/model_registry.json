@@ -2,43 +2,22 @@
     "dncnn_denoiser": {
         "url": "https://github.com/cszn/KAIR/releases/download/v1.0/dncnn_gray_blind.pth",
         "md5": null,
-        "file_name": "dncnn_gray_blind.pth",
+        "file_name": "denoising/dncnn_25.pth",
         "description": "DnCNN model for grayscale blind denoising",
         "category": "foundational"
     },
     "edsr_super_resolution": {
         "url": "https://github.com/sanghyun-son/EDSR-PyTorch/raw/master/experiment/model/edsr_baseline_x2-1bc95232.pt",
         "md5": null,
-        "file_name": "edsr_x2.pt",
-        "description": "EDSR model for 2x super-resolution (baseline)",
+        "file_name": "super_resolution/RealESRGAN_x2.pth",
+        "description": "RealESRGAN model for 2x super-resolution",
         "category": "foundational"
     },
     "unet_artifact_removal": {
         "url": "https://github.com/mameli/Artifact_Removal_GAN",
         "md5": null,
-        "file_name": "UNet_GAN_model_link_only",
-        "description": "GitHub repo for U-Net GAN for artifact removal (manual download required)",
+        "file_name": "artifact_removal/G_ema_ep_82.pth",
+        "description": "U-Net GAN model for artifact removal",
         "category": "foundational"
-    },
-    "diffusion_denoiser": {
-        "url": "https://github.com/yuanzhi-zhu/DiffPIR",
-        "md5": null,
-        "file_name": "DiffPIR_repo_link_only",
-        "description": "DiffPIR: Denoising Diffusion Models for Plug-and-Play Restoration (manual download)",
-        "category": "novel"
-    },
-    "swinir_super_resolution": {
-        "url": "https://github.com/JingyunLiang/SwinIR",
-        "md5": null,
-        "file_name": "SwinIR_repo_link_only",
-        "description": "SwinIR official GitHub repository (manual download)",
-        "category": "novel"
-    },
-    "stylegan_artifact_removal": {
-        "url": "https://catalog.ngc.nvidia.com/orgs/nvidia/teams/research/models/stylegan3",
-        "md5": null,
-        "file_name": "StyleGAN3_NGC_link_only",
-        "description": "StyleGAN3 by NVIDIA Research (download via NGC CLI)",
-        "category": "novel"
     }
 }

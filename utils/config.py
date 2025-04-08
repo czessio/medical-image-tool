@@ -11,7 +11,7 @@ class Config:
     """Manages application configuration settings."""
     
     # Default configuration values
-    CONFIG_UPDATES = {
+    DEFAULT_CONFIG = {
         "models": {
             "use_novel": False,  # Default to foundational models
             "denoising": {
@@ -44,6 +44,7 @@ class Config:
             }
         }
     }
+
     
     def __init__(self, config_path=None):
         """Initialize configuration with optional path to config file."""
@@ -64,6 +65,8 @@ class Config:
         # Save config to ensure all defaults are written
         self.save()
     
+    
+    
     def load(self):
         """Load configuration from file or create default if it doesn't exist."""
         try:
@@ -71,7 +74,7 @@ class Config:
                 with open(self.config_path, 'r') as f:
                     loaded_config = json.load(f)
                     # Merge with defaults to ensure all keys are present
-                    self._merge_configs(self.DEFAULT_CONFIG, loaded_config)
+                    self._merge_configs(Config.DEFAULT_CONFIG, loaded_config)
                     self.logger.info(f"Configuration loaded from {self.config_path}")
                     return loaded_config
         except Exception as e:
@@ -80,6 +83,8 @@ class Config:
         # If we get here, either the file doesn't exist or there was an error
         self.logger.info("Using default configuration")
         return Config.DEFAULT_CONFIG.copy()
+    
+    
     
     def save(self):
         """Save current configuration to file."""

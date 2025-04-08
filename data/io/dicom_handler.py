@@ -7,21 +7,29 @@ import logging
 from pathlib import Path
 import numpy as np
 
-
-
-
 try:
     import pydicom
-    # Try a different approach instead of importing apply_window which doesn't exist
-    # from pydicom.pixel_data_handlers.util import apply_window
     PYDICOM_AVAILABLE = True
     print(f"DEBUG: pydicom successfully imported: {pydicom.__version__}")
 except ImportError as e:
     PYDICOM_AVAILABLE = False
     print(f"DEBUG: pydicom import failed: {e}")
 
-
-
+# Define our own apply_window function since it might not be available in pydicom
+def apply_window(pixel_array, window_center, window_width, y_min=0, y_max=255):
+    """Apply window center and width to the given pixel array."""
+    if not isinstance(window_center, (int, float)):
+        window_center = float(window_center)
+    if not isinstance(window_width, (int, float)):
+        window_width = float(window_width)
+        
+    window_min = window_center - window_width / 2.0
+    window_max = window_center + window_width / 2.0
+    
+    output = np.clip(pixel_array, window_min, window_max)
+    output = ((output - window_min) / (window_max - window_min)) * (y_max - y_min) + y_min
+    
+    return output
 
 logger = logging.getLogger(__name__)
 
@@ -112,13 +120,8 @@ class DicomHandler:
         
         logger.debug(f"Applying window/level: {window}/{level}")
         
-        # Apply windowing
-        low = level - window / 2
-        high = level + window / 2
-        windowed_image = np.clip(image_data, low, high)
-        
-        # Normalize to 0-1 range
-        windowed_image = (windowed_image - low) / (high - low)
+        # Apply windowing using our function
+        windowed_image = apply_window(image_data, level, window, 0, 1)
         
         return windowed_image
     
