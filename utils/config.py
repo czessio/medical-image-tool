@@ -11,20 +11,14 @@ class Config:
     """Manages application configuration settings."""
     
     # Default configuration values
-    DEFAULT_CONFIG = {
+    CONFIG_UPDATES = {
         "models": {
-            "use_novel": True,
+            "use_novel": False,  # Default to foundational models
             "denoising": {
                 "foundational": {
                     "dncnn_denoiser": {
                         "enabled": True,
-                        "model_path": "weights/foundational/dncnn_denoiser.pth"
-                    }
-                },
-                "novel": {
-                    "novel_diffusion_denoiser": {
-                        "enabled": True,
-                        "model_path": "weights/novel/diffusion_denoiser.pth"
+                        "model_path": "weights/foundational/denoising/dncnn_gray_blind.pth"
                     }
                 },
                 "device": "auto"  # auto, cpu, cuda
@@ -33,13 +27,7 @@ class Config:
                 "foundational": {
                     "edsr_super_resolution": {
                         "enabled": True,
-                        "model_path": "weights/foundational/edsr_x2.pth"
-                    }
-                },
-                "novel": {
-                    "novel_restormer": {
-                        "enabled": True,
-                        "model_path": "weights/novel/swinir_x2.pth"
+                        "model_path": "weights/foundational/super_resolution/edsr_x2.pt"
                     }
                 },
                 "device": "auto",
@@ -49,42 +37,11 @@ class Config:
                 "foundational": {
                     "unet_artifact_removal": {
                         "enabled": True,
-                        "model_path": "weights/foundational/unet_artifact_removal.pth"
+                        "model_path": "weights/foundational/artifact_removal/G_ema_ep_82.pth"
                     }
                 },
-                "novel": {
-                    "novel_stylegan_artifact_removal": {
-                        "enabled": True,
-                        "model_path": "weights/novel/stylegan_artifact_removal.pth"
-                    }
-                },
-                "device": "auto"
-            },
-            "segmentation": {
-                "enabled": False,
-                "model_path": "weights/segmentation/unet_segmentation.pth",
                 "device": "auto"
             }
-        },
-        "paths": {
-            "last_open_dir": "",
-            "export_dir": "",
-            "temp_dir": "temp",
-            "model_weights_dir": "weights",
-            "cache_dir": ".cache"
-        },
-        "gui": {
-            "theme": "dark",
-            "window_size": [1024, 768],
-            "comparison_view": "side_by_side"  # side_by_side, overlay, split
-        },
-        "processing": {
-            "preview_quality": "medium",  # low, medium, high
-            "use_threading": True,
-            "max_image_dimension": 2048,  # Limit size for preview processing
-            "use_cuda_if_available": True,
-            "cache_processed_images": True,
-            "auto_download_models": True  # Automatically download missing models
         }
     }
     
@@ -122,7 +79,7 @@ class Config:
             
         # If we get here, either the file doesn't exist or there was an error
         self.logger.info("Using default configuration")
-        return self.DEFAULT_CONFIG.copy()
+        return Config.DEFAULT_CONFIG.copy()
     
     def save(self):
         """Save current configuration to file."""

@@ -18,6 +18,9 @@ from utils.logging_setup import setup_logging
 from utils.model_initializer import ModelInitializer
 from gui.main_window import MainWindow
 
+
+
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 class SplashScreen(QSplashScreen):
@@ -67,42 +70,75 @@ class SplashScreen(QSplashScreen):
             self.status_label.setText(status)
         self.repaint()  # Force repaint to update display
 
-def parse_arguments():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Medical Image Enhancement Application")
-    
-    parser.add_argument(
-        "--log-level", 
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Set the logging level"
-    )
-    
-    parser.add_argument(
-        "--log-dir",
-        type=str,
-        help="Directory for log files (default: ~/.medimage_enhancer/logs)"
-    )
-    
-    parser.add_argument(
-        "--no-splash",
-        action="store_true",
-        help="Disable splash screen"
-    )
-    
-    parser.add_argument(
-        "--skip-model-check",
-        action="store_true",
-        help="Skip model availability checking"
-    )
-    
-    parser.add_argument(
-        "image_path",
-        nargs="?",
-        help="Path to an image file to open on startup"
-    )
-    
-    return parser.parse_args()
+    def parse_arguments():
+        """Parse command line arguments."""
+        parser = argparse.ArgumentParser(description="Medical Image Enhancement Application")
+        
+        parser.add_argument(
+            "--use-foundational",
+            action="store_true",
+            help="Use foundational models instead of novel models"
+        )
+        
+        
+        parser.add_argument(
+            "--log-level", 
+            choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            default="INFO",
+            help="Set the logging level"
+        )
+        
+        parser.add_argument(
+            "--log-dir",
+            type=str,
+            help="Directory for log files (default: ~/.medimage_enhancer/logs)"
+        )
+        
+        parser.add_argument(
+            "--no-splash",
+            action="store_true",
+            help="Disable splash screen"
+        )
+        
+        parser.add_argument(
+            "--skip-model-check",
+            action="store_true",
+            help="Skip model availability checking"
+        )
+        
+        # Add new flag for using foundational models
+        parser.add_argument(
+            "--use-foundational",
+            action="store_true",
+            help="Use foundational models instead of novel models"
+        )
+        
+        parser.add_argument(
+            "image_path",
+            nargs="?",
+            help="Path to an image file to open on startup"
+        )
+        
+        if args.use_foundational:
+            from utils.config import Config
+            config = Config()
+            config.set("models.use_novel", False)
+            config.save()
+            logger.info("Set to use foundational models")
+        
+        
+        return parser.parse_args()
+
+    # Then update the main function to use this flag and set the configuration
+    # Add these lines after parsing arguments:
+
+    # Set model type preference if specified
+    if args.use_foundational:
+        from utils.config import Config
+        config = Config()
+        config.set("models.use_novel", False)
+        config.save()
+        logger.info("Set to use foundational models")
 
 def initialize_models(splash=None):
     """
