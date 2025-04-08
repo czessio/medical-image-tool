@@ -21,6 +21,8 @@ from gui.main_window import MainWindow
 
 
 
+
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 class SplashScreen(QSplashScreen):
@@ -80,7 +82,6 @@ class SplashScreen(QSplashScreen):
             help="Use foundational models instead of novel models"
         )
         
-        
         parser.add_argument(
             "--log-level", 
             choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -106,39 +107,13 @@ class SplashScreen(QSplashScreen):
             help="Skip model availability checking"
         )
         
-        # Add new flag for using foundational models
-        parser.add_argument(
-            "--use-foundational",
-            action="store_true",
-            help="Use foundational models instead of novel models"
-        )
-        
         parser.add_argument(
             "image_path",
             nargs="?",
             help="Path to an image file to open on startup"
         )
         
-        if args.use_foundational:
-            from utils.config import Config
-            config = Config()
-            config.set("models.use_novel", False)
-            config.save()
-            logger.info("Set to use foundational models")
-        
-        
         return parser.parse_args()
-
-    # Then update the main function to use this flag and set the configuration
-    # Add these lines after parsing arguments:
-
-    # Set model type preference if specified
-    if args.use_foundational:
-        from utils.config import Config
-        config = Config()
-        config.set("models.use_novel", False)
-        config.save()
-        logger.info("Set to use foundational models")
 
 def initialize_models(splash=None):
     """
@@ -183,6 +158,7 @@ def initialize_models(splash=None):
 def main():
     """Main application entry point."""
     # Parse command line arguments
+# Parse command line arguments
     args = parse_arguments()
     
     # Set up logging
@@ -191,6 +167,14 @@ def main():
     logger = setup_logging(log_dir=log_dir, log_level=log_level)
     
     logger.info("Starting Medical Image Enhancement Application")
+    
+    # Set model type preference if specified
+    if args.use_foundational:
+        from utils.config import Config
+        config = Config()
+        config.set("models.use_novel", False)
+        config.save()
+        logger.info("Set to use foundational models")
     
     # Create QApplication
     app = QApplication(sys.argv)
@@ -259,6 +243,3 @@ def main():
     
     logger.info(f"Application exited with code {exit_code}")
     return exit_code
-
-if __name__ == "__main__":
-    sys.exit(main())

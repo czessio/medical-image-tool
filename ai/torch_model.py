@@ -53,17 +53,18 @@ class TorchModel(BaseModel):
         # Load weights if a path is provided
         if self.model_path:
             try:
-                state_dict = torch.load(self.model_path, map_location=self.torch_device, weights_only=True)
+                state_dict = torch.load(self.model_path, map_location=self.torch_device)
+                # Check if it's a state dict or a model object
+                if isinstance(state_dict, dict) and 'state_dict' in state_dict:
+                    state_dict = state_dict['state_dict']
+                # For RealESRGAN models which might have 'params_ema'
+                elif isinstance(state_dict, dict) and 'params_ema' in state_dict:
+                    state_dict = state_dict['params_ema']
+                    
                 self.model.load_state_dict(state_dict)
             except Exception as e:
                 logger.error(f"Error loading model weights: {e}")
                 raise
-        
-        # Set model to evaluation mode
-        self.model.eval()
-        self.model.to(self.torch_device)
-        
-        logger.info(f"PyTorch model loaded on {self.device}")
     
     
     
