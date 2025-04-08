@@ -1,0 +1,49 @@
+{
+    "model_name": "DnCNN",
+    "file": "dncnn_gray_blind.pth",
+    "task": "denoising",
+    "source": {
+      "url": "https://github.com/cszn/KAIR",
+      "commit": "38a8933b1b8ef6d212979b821d56fbf016a7ff4d",
+      "download_date": "2023-04-15"
+    },
+    "paper": {
+      "title": "Beyond a Gaussian Denoiser: Residual Learning of Deep CNN for Image Denoising",
+      "authors": "Zhang, K., Zuo, W., Chen, Y., Meng, D., & Zhang, L.",
+      "year": 2017,
+      "doi": "10.1109/TIP.2017.2662206"
+    },
+    "model_info": {
+      "architecture": "CNN with residual learning",
+      "input_channels": 1,
+      "output_channels": 1,
+      "depth": 17,
+      "parameters": 556672,
+      "trained_for_noise_level": 25
+    },
+    "usage": {
+      "input_format": {
+        "channels": 1,
+        "normalization": [
+          0,
+          1
+        ],
+        "preprocessing": "Convert RGB to grayscale if needed"
+      },
+      "output_format": {
+        "type": "noise prediction",
+        "postprocessing": "Subtract prediction from noisy input: clean = noisy - prediction"
+      },
+      "recommended_noise_range": [
+        15,
+        35
+      ]
+    },
+    "performance": {
+      "psnr_average": 29.8,
+      "ssim_average": 0.84
+    },
+    "version": "1.0",
+    "license": "MIT",
+    "adapted": true
+  }

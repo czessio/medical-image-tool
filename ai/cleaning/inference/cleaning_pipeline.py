@@ -54,9 +54,9 @@ class CleaningPipeline:
             self.set_artifact_removal_model("novel_stylegan_artifact_removal")
         else:
             logger.info("Initializing pipeline with foundational models")
-            # These will be implemented in the foundational models folder
+            # Use the specific model IDs that match our implementation
             self.set_denoising_model("dncnn_denoiser")
-            self.set_super_resolution_model("edsr")
+            self.set_super_resolution_model("edsr_super_resolution")
             self.set_artifact_removal_model("unet_artifact_removal")
     
     def set_denoising_model(self, model_type, model_path=None, device=None):

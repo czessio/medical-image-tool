@@ -43,7 +43,7 @@ class ModelDownloader:
         "dncnn_denoiser": {
             "url": "https://github.com/cszn/KAIR/releases/download/v1.0/dncnn_gray_blind.pth",
             "md5": None,
-            "file_name": "dncnn_gray_blind.pth",
+            "file_name": "denoising/dncnn_gray_blind.pth",
             "description": "DnCNN model for grayscale blind denoising",
             "category": "foundational",
             "input_channels": 1,
@@ -53,7 +53,7 @@ class ModelDownloader:
         "edsr_super_resolution": {
             "url": "https://github.com/sanghyun-son/EDSR-PyTorch/raw/master/experiment/model/edsr_baseline_x2-1bc95232.pt",
             "md5": None,
-            "file_name": "edsr_x2.pt",
+            "file_name": "super_resolution/edsr_x2.pt", 
             "description": "EDSR model for 2x super-resolution (baseline)",
             "category": "foundational",
             "scale_factor": 2,
@@ -64,13 +64,14 @@ class ModelDownloader:
         "unet_artifact_removal": {
             "url": "https://github.com/mameli/Artifact_Removal_GAN",
             "md5": None,
-            "file_name": "UNet_GAN_model_link_only",
-            "description": "GitHub repo for U-Net GAN for artifact removal (manual download required)",
+            "file_name": "artifact_removal/G_ema_ep_82.pth",
+            "description": "U-Net GAN model for artifact removal",
             "category": "foundational",
             "input_channels": 1,
             "output_channels": 1,
             "grayscale_only": True
         },
+
 
         # === Novel Models ===
         "diffusion_denoiser": {

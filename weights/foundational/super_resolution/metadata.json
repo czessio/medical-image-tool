@@ -1,0 +1,45 @@
+{
+    "model_name": "EDSR",
+    "file": "edsr_x2.pt",
+    "task": "super_resolution",
+    "source": {
+      "url": "https://github.com/sanghyun-son/EDSR-PyTorch",
+      "commit": "1bc95232fc503986a9389fba74456c9d963596b8",
+      "download_date": "2023-05-10"
+    },
+    "paper": {
+      "title": "Enhanced Deep Residual Networks for Single Image Super-Resolution",
+      "authors": "Lim, B., Son, S., Kim, H., Nah, S., & Lee, K. M.",
+      "year": 2017,
+      "conference": "IEEE Conference on Computer Vision and Pattern Recognition Workshops (CVPRW)"
+    },
+    "model_info": {
+      "architecture": "Enhanced deep residual network",
+      "input_channels": 3,
+      "output_channels": 3,
+      "depth": 16,
+      "parameters": 1372843,
+      "scale_factor": 2
+    },
+    "usage": {
+      "input_format": {
+        "channels": 3,
+        "normalization": [
+          0,
+          1
+        ],
+        "preprocessing": "None required, works with RGB images"
+      },
+      "output_format": {
+        "type": "upscaled image",
+        "postprocessing": "None required, directly produces high-resolution output"
+      },
+      "recommended_downscale_method": "bicubic"
+    },
+    "performance": {
+      "psnr_average": 34.55,
+      "ssim_average": 0.9272
+    },
+    "version": "1.0",
+    "license": "MIT"
+  }
