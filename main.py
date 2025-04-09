@@ -18,11 +18,6 @@ from utils.logging_setup import setup_logging
 from utils.model_initializer import ModelInitializer
 from gui.main_window import MainWindow
 
-
-
-
-
-
 sys.path.insert(0, str(Path(__file__).parent))
 
 class SplashScreen(QSplashScreen):
@@ -72,48 +67,48 @@ class SplashScreen(QSplashScreen):
             self.status_label.setText(status)
         self.repaint()  # Force repaint to update display
 
-    def parse_arguments():
-        """Parse command line arguments."""
-        parser = argparse.ArgumentParser(description="Medical Image Enhancement Application")
-        
-        parser.add_argument(
-            "--use-foundational",
-            action="store_true",
-            help="Use foundational models instead of novel models"
-        )
-        
-        parser.add_argument(
-            "--log-level", 
-            choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-            default="INFO",
-            help="Set the logging level"
-        )
-        
-        parser.add_argument(
-            "--log-dir",
-            type=str,
-            help="Directory for log files (default: ~/.medimage_enhancer/logs)"
-        )
-        
-        parser.add_argument(
-            "--no-splash",
-            action="store_true",
-            help="Disable splash screen"
-        )
-        
-        parser.add_argument(
-            "--skip-model-check",
-            action="store_true",
-            help="Skip model availability checking"
-        )
-        
-        parser.add_argument(
-            "image_path",
-            nargs="?",
-            help="Path to an image file to open on startup"
-        )
-        
-        return parser.parse_args()
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Medical Image Enhancement Application")
+    
+    parser.add_argument(
+        "--use-foundational",
+        action="store_true",
+        help="Use foundational models instead of novel models"
+    )
+    
+    parser.add_argument(
+        "--log-level", 
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="Set the logging level"
+    )
+    
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        help="Directory for log files (default: ~/.medimage_enhancer/logs)"
+    )
+    
+    parser.add_argument(
+        "--no-splash",
+        action="store_true",
+        help="Disable splash screen"
+    )
+    
+    parser.add_argument(
+        "--skip-model-check",
+        action="store_true",
+        help="Skip model availability checking"
+    )
+    
+    parser.add_argument(
+        "image_path",
+        nargs="?",
+        help="Path to an image file to open on startup"
+    )
+    
+    return parser.parse_args()
 
 def initialize_models(splash=None):
     """
@@ -158,7 +153,6 @@ def initialize_models(splash=None):
 def main():
     """Main application entry point."""
     # Parse command line arguments
-# Parse command line arguments
     args = parse_arguments()
     
     # Set up logging
@@ -243,3 +237,6 @@ def main():
     
     logger.info(f"Application exited with code {exit_code}")
     return exit_code
+
+if __name__ == "__main__":
+    sys.exit(main())

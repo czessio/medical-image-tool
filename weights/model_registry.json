@@ -2,21 +2,21 @@
     "dncnn_denoiser": {
         "url": "https://github.com/cszn/KAIR/releases/download/v1.0/dncnn_gray_blind.pth",
         "md5": null,
-        "file_name": "denoising/dncnn_25.pth",
+        "file_name": "foundational/denoising/dncnn_25.pth",
         "description": "DnCNN model for grayscale blind denoising",
         "category": "foundational"
     },
     "edsr_super_resolution": {
         "url": "https://github.com/sanghyun-son/EDSR-PyTorch/raw/master/experiment/model/edsr_baseline_x2-1bc95232.pt",
         "md5": null,
-        "file_name": "super_resolution/RealESRGAN_x2.pth",
+        "file_name": "foundational/super_resolution/RealESRGAN_x2.pth",
         "description": "RealESRGAN model for 2x super-resolution",
         "category": "foundational"
     },
     "unet_artifact_removal": {
         "url": "https://github.com/mameli/Artifact_Removal_GAN",
         "md5": null,
-        "file_name": "artifact_removal/G_ema_ep_82.pth",
+        "file_name": "foundational/artifact_removal/G_ema_ep_82.pth",
         "description": "U-Net GAN model for artifact removal",
         "category": "foundational"
     }
