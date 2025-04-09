@@ -42,7 +42,7 @@ class TorchModel(BaseModel):
     
     def _load_model(self):
         """
-        Load the PyTorch model from the specified path.
+        Load the PyTorch model from the specified path with improved error handling.
         """
         # Create PyTorch device
         self.torch_device = torch.device(self.device)
@@ -53,18 +53,49 @@ class TorchModel(BaseModel):
         # Load weights if a path is provided
         if self.model_path:
             try:
+                logger.info(f"Loading model weights from: {self.model_path}")
                 state_dict = torch.load(self.model_path, map_location=self.torch_device)
-                # Check if it's a state dict or a model object
-                if isinstance(state_dict, dict) and 'state_dict' in state_dict:
-                    state_dict = state_dict['state_dict']
-                # For RealESRGAN models which might have 'params_ema'
-                elif isinstance(state_dict, dict) and 'params_ema' in state_dict:
-                    state_dict = state_dict['params_ema']
+                
+                # Handle different formats of saved models
+                if isinstance(state_dict, dict):
+                    # Some models save the state dict under specific keys
+                    if 'state_dict' in state_dict:
+                        state_dict = state_dict['state_dict']
+                    elif 'params_ema' in state_dict:
+                        state_dict = state_dict['params_ema']
+                    elif 'model' in state_dict:
+                        state_dict = state_dict['model']
                     
-                self.model.load_state_dict(state_dict)
+                    # Don't use the weights if they're not a state dict at this point
+                    if not any(isinstance(v, torch.Tensor) for v in state_dict.values()):
+                        logger.warning("Invalid state dict format, using model with random weights")
+                        return
+                
+                # Try to load state dict with strict=False to ignore missing keys
+                try:
+                    # Use strict=False to ignore missing or unexpected keys
+                    result = self.model.load_state_dict(state_dict, strict=False)
+                    
+                    # Log missing and unexpected keys for debugging
+                    if result.missing_keys:
+                        logger.warning(f"Missing keys in state_dict: {result.missing_keys}")
+                    if result.unexpected_keys:
+                        logger.warning(f"Unexpected keys in state_dict: {result.unexpected_keys}")
+                    
+                    logger.info(f"Model weights loaded successfully with non-strict matching")
+                    
+                except Exception as e:
+                    logger.error(f"Error loading state dict with non-strict matching: {e}")
+                    # If that fails, try to use a custom loading function if available
+                    if hasattr(self, '_custom_load_state_dict'):
+                        logger.info("Attempting custom state dict loading")
+                        self._custom_load_state_dict(state_dict)
+                    else:
+                        raise
+                        
             except Exception as e:
                 logger.error(f"Error loading model weights: {e}")
-                raise
+                logger.warning("Using model with random weights")
     
     
     

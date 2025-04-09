@@ -122,8 +122,7 @@ class ModelInitializer:
     
     
     
-    # In utils/model_initializer.py
-    def initialize_for_application(self, download_missing=True):
+    def initialize_for_application(self, download_missing=False):
         """
         Initialize models for application startup.
         
@@ -134,6 +133,18 @@ class ModelInitializer:
             dict: Dictionary of model availability status
         """
         logger.info("Initializing models for application startup")
+        
+        # Ensure weights directories exist
+        weights_dir = Path(self.config.get("paths.model_weights_dir", "weights"))
+        foundational_dir = weights_dir / "foundational"
+        novel_dir = weights_dir / "novel"
+        
+        # Create category directories if they don't exist
+        foundational_dir.mkdir(parents=True, exist_ok=True)
+        (foundational_dir / "denoising").mkdir(exist_ok=True)
+        (foundational_dir / "super_resolution").mkdir(exist_ok=True)
+        (foundational_dir / "artifact_removal").mkdir(exist_ok=True)
+        novel_dir.mkdir(parents=True, exist_ok=True)
         
         # Check which models are available
         foundational_status = self.check_model_availability("foundational")
