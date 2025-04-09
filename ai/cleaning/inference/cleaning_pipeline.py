@@ -22,12 +22,17 @@ class CleaningPipeline:
     novel (cutting-edge) models and foundational (established) models for comparison.
     """
     
-    def __init__(self, use_novel_models=True, config=None):
+    
+    
+    
+        
+    # In ai/cleaning/inference/cleaning_pipeline.py
+    def __init__(self, use_novel_models=None, config=None):
         """
         Initialize the cleaning pipeline.
         
         Args:
-            use_novel_models: Whether to use novel (True) or foundational (False) models
+            use_novel_models: Whether to use novel (True) or foundational (False) models. If None, use config setting.
             config: Configuration object or None to use default config
         """
         self.pipeline = InferencePipeline()
@@ -39,10 +44,19 @@ class CleaningPipeline:
         
         # Configuration for models
         self.config = config or Config()
-        self.use_novel_models = use_novel_models
+        
+        # If use_novel_models is explicitly provided, use it. Otherwise, read from config.
+        if use_novel_models is None:
+            self.use_novel_models = self.config.get("models.use_novel", True)
+        else:
+            self.use_novel_models = use_novel_models
         
         # Initialize with default models if available
         self._initialize_models()
+    
+    
+    
+    
     
     def _initialize_models(self):
         """Initialize pipeline with default models based on configuration."""

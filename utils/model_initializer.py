@@ -118,6 +118,11 @@ class ModelInitializer:
         except Exception as e:
             logger.error(f"Error in download thread: {e}")
     
+    
+    
+    
+    
+    # In utils/model_initializer.py
     def initialize_for_application(self, download_missing=True):
         """
         Initialize models for application startup.
@@ -142,16 +147,24 @@ class ModelInitializer:
             missing_foundational = not all(foundational_status.values())
             missing_novel = not all(novel_status.values())
             
-            # Start download threads for missing models
-            if missing_foundational:
+            # Check if we're using foundational models from config
+            use_novel = self.config.get("models.use_novel", True)
+            
+            # Start download threads for missing models based on what we're using
+            if missing_foundational and not use_novel:
                 logger.info("Downloading missing foundational models")
                 self.download_models("foundational", force=False, block=False)
-                
-            if missing_novel:
+                    
+            if missing_novel and use_novel:
                 logger.info("Downloading missing novel models")
                 self.download_models("novel", force=False, block=False)
-                
+                    
         return all_status
+    
+    
+    
+    
+    
     
     def wait_for_downloads(self):
         """
