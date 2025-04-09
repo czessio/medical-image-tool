@@ -43,7 +43,7 @@ class ModelDownloader:
         "dncnn_denoiser": {
             "url": "https://github.com/cszn/KAIR/releases/download/v1.0/dncnn_gray_blind.pth",
             "md5": None,
-            "file_name": "denoising/dncnn_gray_blind.pth",
+            "file_name": "denoising/dncnn_25.pth",  # Changed this to match your file
             "description": "DnCNN model for grayscale blind denoising",
             "category": "foundational",
             "input_channels": 1,
@@ -53,7 +53,7 @@ class ModelDownloader:
         "edsr_super_resolution": {
             "url": "https://github.com/sanghyun-son/EDSR-PyTorch/raw/master/experiment/model/edsr_baseline_x2-1bc95232.pt",
             "md5": None,
-            "file_name": "super_resolution/edsr_x2.pt", 
+            "file_name": "super_resolution/RealESRGAN_x2.pth",  # Changed this to match your file
             "description": "EDSR model for 2x super-resolution (baseline)",
             "category": "foundational",
             "scale_factor": 2,
@@ -71,7 +71,6 @@ class ModelDownloader:
             "output_channels": 1,
             "grayscale_only": True
         },
-
 
         # === Novel Models ===
         "diffusion_denoiser": {
@@ -203,6 +202,8 @@ class ModelDownloader:
             
         return model_path
     
+    
+    
     def download_model(self, model_id, force=False):
         """
         Download a model by ID.
@@ -230,7 +231,9 @@ class ModelDownloader:
         else:
             model_dir = self.foundational_dir
             
+        # Ensure the full path exists (including subdirectories)
         model_path = model_dir / file_name
+        model_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Check if the file already exists and has correct checksum
         if model_path.exists() and not force:
@@ -244,7 +247,7 @@ class ModelDownloader:
         # Download the file
         try:
             # Create a temporary file for download
-            temp_file = model_dir / f"{file_name}.download"
+            temp_file = model_dir / f"{Path(file_name).name}.download"
             
             logger.info(f"Downloading model from {url} to {temp_file}")
             
@@ -259,6 +262,7 @@ class ModelDownloader:
                 return None
             
             # Move the file to the final location
+            model_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
             shutil.move(temp_file, model_path)
             logger.info(f"Model downloaded successfully: {model_path}")
             
@@ -266,9 +270,12 @@ class ModelDownloader:
             
         except Exception as e:
             logger.error(f"Error downloading model {model_id}: {e}")
-            if temp_file.exists():
+            if 'temp_file' in locals() and temp_file.exists():
                 temp_file.unlink(missing_ok=True)
             return None
+    
+    
+    
     
     def download_all_models(self, category=None, force=False):
         """

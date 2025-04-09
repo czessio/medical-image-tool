@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import numpy as np
 import torch
+import os
 
 from ai.inference_pipeline import InferencePipeline
 from ai.model_registry import ModelRegistry
@@ -60,19 +61,63 @@ class CleaningPipeline:
     
     def _initialize_models(self):
         """Initialize pipeline with default models based on configuration."""
-        # Load available model types
-        if self.use_novel_models:
-            logger.info("Initializing pipeline with novel models")
-            self.set_denoising_model("novel_diffusion_denoiser")
-            self.set_super_resolution_model("novel_restormer")
-            self.set_artifact_removal_model("novel_stylegan_artifact_removal")
+        logger.info(f"Initializing pipeline with {'novel' if self.use_novel_models else 'foundational'} models")
+        
+        # Try to load all models, but continue even if some fail
+        success = True
+        
+        # Load denoising model
+        try:
+            if self.use_novel_models:
+                denoising_success = self.set_denoising_model("novel_diffusion_denoiser")
+            else:
+                denoising_success = self.set_denoising_model("dncnn_denoiser")
+            
+            if not denoising_success:
+                logger.warning("Denoising model failed to load, continuing without it")
+        except Exception as e:
+            logger.error(f"Error loading denoising model: {e}")
+            denoising_success = False
+        
+        # Load super-resolution model
+        try:
+            if self.use_novel_models:
+                sr_success = self.set_super_resolution_model("novel_restormer")
+            else:
+                sr_success = self.set_super_resolution_model("edsr_super_resolution")
+            
+            if not sr_success:
+                logger.warning("Super-resolution model failed to load, continuing without it")
+        except Exception as e:
+            logger.error(f"Error loading super-resolution model: {e}")
+            sr_success = False
+        
+        # Load artifact removal model
+        try:
+            if self.use_novel_models:
+                ar_success = self.set_artifact_removal_model("novel_stylegan_artifact_removal")
+            else:
+                ar_success = self.set_artifact_removal_model("unet_artifact_removal")
+            
+            if not ar_success:
+                logger.warning("Artifact removal model failed to load, continuing without it")
+        except Exception as e:
+            logger.error(f"Error loading artifact removal model: {e}")
+            ar_success = False
+        
+        # Return overall success status
+        success = denoising_success or sr_success or ar_success
+        if not success:
+            logger.warning("No models were loaded successfully")
         else:
-            logger.info("Initializing pipeline with foundational models")
-            # Use the specific model IDs that match our implementation
-            self.set_denoising_model("dncnn_denoiser")
-            self.set_super_resolution_model("edsr_super_resolution")
-            self.set_artifact_removal_model("unet_artifact_removal")
+            logger.info(f"Loaded models: " + 
+                    (f"denoising ({'✓' if denoising_success else '✗'}), " if denoising_success is not None else "") +
+                    (f"super-resolution ({'✓' if sr_success else '✗'}), " if sr_success is not None else "") +
+                    (f"artifact removal ({'✓' if ar_success else '✗'})" if ar_success is not None else ""))
+        
+        return success
     
+    # In ai/cleaning/inference/cleaning_pipeline.py, improve set_denoising_model:
     def set_denoising_model(self, model_type, model_path=None, device=None):
         """
         Set the denoising model for the pipeline.
@@ -99,6 +144,22 @@ class CleaningPipeline:
             model_category = "novel" if self.use_novel_models else "foundational"
             config_path = f"models.denoising.{model_category}.{model_type}.model_path"
             model_path = self.config.get(config_path)
+            
+            # Fix path if it has duplicated "foundational"
+            if model_path and "foundational/foundational" in model_path:
+                model_path = model_path.replace("foundational/foundational", "foundational")
+                
+            # Check for specific model names
+            if model_type == "dncnn_denoiser":
+                # Try standard paths
+                standard_paths = [
+                    f"weights/foundational/denoising/dncnn_gray_blind.pth",
+                    f"weights/foundational/denoising/dncnn_25.pth"
+                ]
+                for path in standard_paths:
+                    if os.path.exists(path):
+                        model_path = path
+                        break
         
         # Get device from config if not provided
         if device is None:
@@ -277,22 +338,26 @@ class CleaningPipeline:
         
         # Try to use available models but handle failures gracefully
         try:
+            # Get active models
+            active_models = self.get_active_models()
+            logger.info(f"Processing image with active models: {', '.join(active_models)}")
+            
             result = self.pipeline.process(image)
             return result
         except Exception as e:
             logger.error(f"Error in cleaning pipeline: {e}")
             logger.warning("Falling back to original image due to pipeline error")
             return image
-       
-       
-    def get_active_models(self):
-        """
-        Get list of active models in the pipeline.
         
-        Returns:
-            list: Names of active models
-        """
-        return [name for name, model in self.current_models.items() if model is not None]
+        
+        def get_active_models(self):
+            """
+            Get list of active models in the pipeline.
+            
+            Returns:
+                list: Names of active models
+            """
+            return [name for name, model in self.current_models.items() if model is not None]
     
     def __call__(self, image):
         """

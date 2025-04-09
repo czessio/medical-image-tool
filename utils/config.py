@@ -11,6 +11,7 @@ class Config:
     """Manages application configuration settings."""
     
     # Default configuration values
+# Modify in utils/config.py - update DEFAULT_CONFIG
     DEFAULT_CONFIG = {
         "models": {
             "use_novel": False,  # Default to foundational models
@@ -158,11 +159,14 @@ class Config:
         model_path = self.get(f"models.{model_type}.{category}.{model_name}.model_path")
         
         if model_path:
+            # Make sure path doesn't have duplicated "foundational" directories
+            if "foundational/foundational" in model_path:
+                model_path = model_path.replace("foundational/foundational", "foundational")
             return model_path
             
         # If not found, return a default path based on the model name and category
         weights_dir = self.get("paths.model_weights_dir", "weights")
-        return f"{weights_dir}/{category}/{model_name}.pth"
+        return f"{weights_dir}/{category}/{model_type}/{model_name}.pth"
     
     def set_model_path(self, model_type, model_name, model_path, use_novel=None):
         """
