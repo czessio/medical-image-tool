@@ -1,6 +1,6 @@
 """
-Cleaning pipeline for medical image enhancement application.
-Manages the execution of AI cleaning models in sequence.
+Updated cleaning pipeline for medical image enhancement application.
+Manages the execution of AI cleaning models in sequence with improved model loading.
 """
 import logging
 from pathlib import Path
@@ -23,11 +23,6 @@ class CleaningPipeline:
     novel (cutting-edge) models and foundational (established) models for comparison.
     """
     
-    
-    
-    
-        
-    # In ai/cleaning/inference/cleaning_pipeline.py
     def __init__(self, use_novel_models=None, config=None):
         """
         Initialize the cleaning pipeline.
@@ -48,16 +43,12 @@ class CleaningPipeline:
         
         # If use_novel_models is explicitly provided, use it. Otherwise, read from config.
         if use_novel_models is None:
-            self.use_novel_models = self.config.get("models.use_novel", True)
+            self.use_novel_models = self.config.get("models.use_novel", False)
         else:
             self.use_novel_models = use_novel_models
         
         # Initialize with default models if available
         self._initialize_models()
-    
-    
-    
-    
     
     def _initialize_models(self):
         """Initialize pipeline with default models based on configuration."""
@@ -81,10 +72,13 @@ class CleaningPipeline:
         
         # Load super-resolution model
         try:
+            # Get scale factor from config
+            scale_factor = self.config.get("models.super_resolution.scale_factor", 2)
+            
             if self.use_novel_models:
-                sr_success = self.set_super_resolution_model("novel_restormer")
+                sr_success = self.set_super_resolution_model("novel_restormer", scale_factor=scale_factor)
             else:
-                sr_success = self.set_super_resolution_model("edsr_super_resolution")
+                sr_success = self.set_super_resolution_model("edsr_super_resolution", scale_factor=scale_factor)
             
             if not sr_success:
                 logger.warning("Super-resolution model failed to load, continuing without it")
@@ -116,11 +110,6 @@ class CleaningPipeline:
                     (f"artifact removal ({'✓' if ar_success else '✗'})" if ar_success is not None else ""))
         
         return success
-    
-    
-    
-    
-    
     
     def set_artifact_removal_model(self, model_type, model_path=None, device=None):
         """
@@ -179,20 +168,6 @@ class CleaningPipeline:
         self.current_models["artifact_removal"] = model
         return True
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     def set_denoising_model(self, model_type, model_path=None, device=None):
         """
         Set the denoising model for the pipeline.
@@ -228,10 +203,10 @@ class CleaningPipeline:
             if model_type == "dncnn_denoiser":
                 # Try standard paths
                 standard_paths = [
-                    f"weights/foundational/denoising/dncnn_gray_blind.pth",
                     f"weights/foundational/denoising/dncnn_25.pth",
-                    f"weights/foundational/foundational/denoising/dncnn_gray_blind.pth",
-                    f"weights/foundational/foundational/denoising/dncnn_25.pth"
+                    f"weights/foundational/denoising/dncnn_gray_blind.pth",
+                    f"weights/foundational/foundational/denoising/dncnn_25.pth",
+                    f"weights/foundational/foundational/denoising/dncnn_gray_blind.pth"
                 ]
                 for path in standard_paths:
                     if os.path.exists(path):
@@ -251,11 +226,6 @@ class CleaningPipeline:
         self.pipeline.add_model(model, f"denoising_{model_type}")
         self.current_models["denoising"] = model
         return True
-    
-    
-    
-    
-    
     
     def set_super_resolution_model(self, model_type, model_path=None, device=None, scale_factor=None):
         """
@@ -308,6 +278,19 @@ class CleaningPipeline:
             # Fix path if it has duplicated "foundational"
             if model_path and "foundational/foundational" in model_path:
                 model_path = model_path.replace("foundational/foundational", "foundational")
+                
+            # Verify the model file exists
+            if model_path and not os.path.exists(model_path):
+                logger.warning(f"Model file not found: {model_path}")
+                # Try to find a valid model file
+                if model_type == "edsr_super_resolution":
+                    for x in [2, 4, 8]:
+                        alt_path = f"weights/{model_category}/super_resolution/RealESRGAN_x{x}.pth"
+                        if os.path.exists(alt_path):
+                            model_path = alt_path
+                            scale_factor = x
+                            logger.info(f"Using alternative model file: {model_path}")
+                            break
         
         # Get device from config if not provided
         if device is None:
@@ -339,11 +322,7 @@ class CleaningPipeline:
         except Exception as e:
             logger.error(f"Error setting super-resolution model: {e}")
             return False
-
-
-
-
-
+    
     def set_scale_factor(self, scale_factor):
         """
         Set the scale factor for super-resolution.
@@ -366,67 +345,24 @@ class CleaningPipeline:
         
         # If we have a super-resolution model, reload it with the new scale factor
         if self.current_models["super_resolution"] is not None:
-            # Get the current model type from the name
+            model_name = None
             for name in self.pipeline.model_names:
                 if "super_resolution" in name:
                     # Extract model type from name like "super_resolution_edsr_super_resolution_x2"
                     parts = name.split("_")
                     if len(parts) >= 3:
-                        # Skip the first part ("super_resolution") and remove the scale factor part
-                        # The model type is everything in between
-                        model_type = "_".join(parts[1:-1])
-                        if model_type.endswith("_x2") or model_type.endswith("_x4") or model_type.endswith("_x8"):
-                            # Remove the scale factor suffix if it's part of the model type
-                            model_type = model_type[:-3]
-                        
-                        return self.set_super_resolution_model(model_type, scale_factor=scale_factor)
-        
-        return True
-
-
-
-
-
-
-
-    def set_scale_factor(self, scale_factor):
-        """
-        Set the scale factor for super-resolution.
-        
-        Args:
-            scale_factor: Upscaling factor (2, 4, or 8)
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        # Validate scale factor
-        if scale_factor not in [2, 4, 8]:
-            logger.error(f"Invalid scale factor: {scale_factor}. Must be 2, 4, or 8.")
-            return False
-        
-        # Update config
-        self.config.set("models.super_resolution.scale_factor", scale_factor)
-        
-        # If we have a super-resolution model, update it
-        if self.current_models["super_resolution"] is not None:
-            model_type = None
-            for name in self.pipeline.model_names:
-                if "super_resolution" in name:
-                    # Extract model type from name
-                    parts = name.split("_")
-                    if len(parts) >= 3:
-                        model_type = parts[1]
+                        # Skip "super_resolution" prefix, keep the model type name
+                        model_name = "_".join(parts[1:-1])
+                        if model_name.endswith("_x2") or model_name.endswith("_x4") or model_name.endswith("_x8"):
+                            # Remove the scale factor suffix if it's part of the model name
+                            model_name = model_name[:-3]
                     break
             
-            if model_type:
-                return self.set_super_resolution_model(model_type, scale_factor=scale_factor)
+            if model_name:
+                # Update the model with the new scale factor
+                return self.set_super_resolution_model(model_name, scale_factor=scale_factor)
         
         return True
-    
-    
-    
-    
-    
     
     def toggle_model_type(self):
         """
@@ -455,8 +391,6 @@ class CleaningPipeline:
     
         return success
     
-    
-    
     def enable_all_models(self):
         """
         Enable all cleaning models in the pipeline.
@@ -481,7 +415,6 @@ class CleaningPipeline:
         }
         return True
     
-    
     def process(self, image):
         """
         Process an image through the cleaning pipeline.
@@ -499,7 +432,7 @@ class CleaningPipeline:
         # Try to use available models but handle failures gracefully
         try:
             # Get active models
-            active_models = self.get_active_models()
+            active_models = [name for name, model in self.current_models.items() if model is not None]
             logger.info(f"Processing image with active models: {', '.join(active_models)}")
             
             result = self.pipeline.process(image)
@@ -508,16 +441,15 @@ class CleaningPipeline:
             logger.error(f"Error in cleaning pipeline: {e}")
             logger.warning("Falling back to original image due to pipeline error")
             return image
+    
+    def get_active_models(self):
+        """
+        Get list of active models in the pipeline.
         
-        
-        def get_active_models(self):
-            """
-            Get list of active models in the pipeline.
-            
-            Returns:
-                list: Names of active models
-            """
-            return [name for name, model in self.current_models.items() if model is not None]
+        Returns:
+            list: Names of active models
+        """
+        return [name for name, model in self.current_models.items() if model is not None]
     
     def __call__(self, image):
         """
