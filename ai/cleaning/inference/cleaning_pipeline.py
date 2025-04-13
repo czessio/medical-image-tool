@@ -1,6 +1,6 @@
 """
 Updated cleaning pipeline for medical image enhancement application.
-Manages the execution of AI cleaning models in sequence with improved model loading.
+Manages the execution of AI cleaning models in sequence with improved model loading and error handling.
 """
 import logging
 from pathlib import Path
@@ -10,6 +10,7 @@ import os
 
 from ai.inference_pipeline import InferencePipeline
 from ai.model_registry import ModelRegistry
+from ai.model_adapter import ModelAdapter  # Import the new ModelAdapter
 from utils.config import Config
 
 logger = logging.getLogger(__name__)
@@ -51,67 +52,70 @@ class CleaningPipeline:
         self._initialize_models()
     
     def _initialize_models(self):
-            """Initialize pipeline with default models based on configuration."""
-            logger.info(f"Initializing pipeline with {'novel' if self.use_novel_models else 'foundational'} models")
-            
-            # Try to load all models, but continue even if some fail
-            success = True
-            
-            # Load denoising model
-            try:
-                if self.use_novel_models:
-                    denoising_success = self.set_denoising_model("novel_diffusion_denoiser")
-                else:
-                    denoising_success = self.set_denoising_model("dncnn_denoiser")
-                
-                if not denoising_success:
-                    logger.warning("Denoising model failed to load, continuing without it")
-            except Exception as e:
-                logger.error(f"Error loading denoising model: {e}")
-                denoising_success = False
-            
-            # Load super-resolution model
-            try:
-                # Get scale factor from config
-                scale_factor = self.config.get("models.super_resolution.scale_factor", 2)
-                
-                if self.use_novel_models:
-                    sr_success = self.set_super_resolution_model("novel_restormer", scale_factor=scale_factor)
-                else:
-                    sr_success = self.set_super_resolution_model("edsr_super_resolution", scale_factor=scale_factor)
-                
-                if not sr_success:
-                    logger.warning("Super-resolution model failed to load, continuing without it")
-            except Exception as e:
-                logger.error(f"Error loading super-resolution model: {e}")
-                sr_success = False
-            
-            # Load artifact removal model
-            try:
-                if self.use_novel_models:
-                    ar_success = self.set_artifact_removal_model("novel_stylegan_artifact_removal")
-                else:
-                    ar_success = self.set_artifact_removal_model("unet_artifact_removal")
-                
-                if not ar_success:
-                    logger.warning("Artifact removal model failed to load, continuing without it")
-            except Exception as e:
-                logger.error(f"Error loading artifact removal model: {e}")
-                ar_success = False
-            
-            # Return overall success status
-            success = denoising_success or sr_success or ar_success
-            if not success:
-                logger.warning("No models were loaded successfully")
+        """Initialize pipeline with default models based on configuration."""
+        logger.info(f"Initializing pipeline with {'novel' if self.use_novel_models else 'foundational'} models")
+        
+        # Try to load all models, but continue even if some fail
+        success = True
+        
+        # Load denoising model
+        try:
+            if self.use_novel_models:
+                denoising_success = self.set_denoising_model("novel_diffusion_denoiser")
             else:
-                # Using ASCII symbols instead of Unicode for better compatibility
-                logger.info(f"Loaded models: " + 
-                        (f"denoising ({'Y' if denoising_success else 'N'}), " if denoising_success is not None else "") +
-                        (f"super-resolution ({'Y' if sr_success else 'N'}), " if sr_success is not None else "") +
-                        (f"artifact removal ({'Y' if ar_success else 'N'})" if ar_success is not None else ""))
+                denoising_success = self.set_denoising_model("dncnn_denoiser")
             
-            return success
-    
+            if not denoising_success:
+                logger.warning("Denoising model failed to load, continuing without it")
+        except Exception as e:
+            logger.error(f"Error loading denoising model: {e}")
+            denoising_success = False
+        
+        # Load super-resolution model
+        try:
+            # Get scale factor from config
+            scale_factor = self.config.get("models.super_resolution.scale_factor", 2)
+            
+            if self.use_novel_models:
+                sr_success = self.set_super_resolution_model("novel_restormer", scale_factor=scale_factor)
+            else:
+                sr_success = self.set_super_resolution_model("edsr_super_resolution", scale_factor=scale_factor)
+            
+            if not sr_success:
+                logger.warning("Super-resolution model failed to load, continuing without it")
+        except Exception as e:
+            logger.error(f"Error loading super-resolution model: {e}")
+            sr_success = False
+        
+        # Load artifact removal model
+        try:
+            if self.use_novel_models:
+                ar_success = self.set_artifact_removal_model("novel_stylegan_artifact_removal")
+            else:
+                ar_success = self.set_artifact_removal_model("unet_artifact_removal")
+            
+            if not ar_success:
+                logger.warning("Artifact removal model failed to load, continuing without it")
+        except Exception as e:
+            logger.error(f"Error loading artifact removal model: {e}")
+            ar_success = False
+        
+        # Return overall success status
+        success = denoising_success or sr_success or ar_success
+        if not success:
+            logger.warning("No models were loaded successfully")
+        else:
+            # Using ASCII symbols instead of Unicode for better compatibility
+            logger.info(f"Loaded models: " + 
+                    (f"denoising (Y), " if denoising_success else "") +
+                    (f"super-resolution (Y), " if sr_success else "") +
+                    (f"artifact removal (Y)" if ar_success else ""))
+        
+        # Ensure all models are on the same device
+        if success:
+            self._ensure_models_same_device()
+            
+        return success
     
     def _ensure_models_same_device(self):
         """
@@ -149,29 +153,6 @@ class CleaningPipeline:
                             model.model.to(model.torch_device)
                 except Exception as e:
                     logger.error(f"Error moving {model_type} to {target_device}: {e}")
-
-    def enable_all_models(self):
-        """
-        Enable all cleaning models in the pipeline.
-        
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        success = self._initialize_models()
-        
-        # Ensure all models are on the same device
-        if success:
-            self._ensure_models_same_device()
-            
-        return success
-    
-    
-    
-    
-    
-    
-    
-    
     
     def set_artifact_removal_model(self, model_type, model_path=None, device=None):
         """
@@ -226,8 +207,11 @@ class CleaningPipeline:
             logger.error(f"Failed to create artifact removal model: {model_type}")
             return False
         
-        self.pipeline.add_model(model, f"artifact_removal_{model_type}")
-        self.current_models["artifact_removal"] = model
+        # Wrap model in adapter for safety
+        model_adapter = ModelAdapter(model, f"artifact_removal_{model_type}")
+        
+        self.pipeline.add_model(model_adapter, f"artifact_removal_{model_type}")
+        self.current_models["artifact_removal"] = model_adapter
         return True
     
     def set_denoising_model(self, model_type, model_path=None, device=None):
@@ -285,8 +269,11 @@ class CleaningPipeline:
             logger.error(f"Failed to create denoising model: {model_type}")
             return False
         
-        self.pipeline.add_model(model, f"denoising_{model_type}")
-        self.current_models["denoising"] = model
+        # Wrap model in adapter for safety
+        model_adapter = ModelAdapter(model, f"denoising_{model_type}")
+        
+        self.pipeline.add_model(model_adapter, f"denoising_{model_type}")
+        self.current_models["denoising"] = model_adapter
         return True
     
     def set_super_resolution_model(self, model_type, model_path=None, device=None, scale_factor=None):
@@ -377,9 +364,12 @@ class CleaningPipeline:
                 model.scale_factor = scale_factor
                 logger.info(f"Set super-resolution scale factor to {scale_factor}")
             
+            # Wrap model in adapter for safety
+            model_adapter = ModelAdapter(model, f"super_resolution_{model_type}_x{scale_factor}")
+            
             # Add to pipeline
-            self.pipeline.add_model(model, f"super_resolution_{model_type}_x{scale_factor}")
-            self.current_models["super_resolution"] = model
+            self.pipeline.add_model(model_adapter, f"super_resolution_{model_type}_x{scale_factor}")
+            self.current_models["super_resolution"] = model_adapter
             return True
         except Exception as e:
             logger.error(f"Error setting super-resolution model: {e}")
@@ -478,55 +468,55 @@ class CleaningPipeline:
         return True
     
     def process(self, image):
-            """
-            Process an image through the cleaning pipeline.
+        """
+        Process an image through the cleaning pipeline.
+        
+        Args:
+            image: Input medical image as numpy array
             
-            Args:
-                image: Input medical image as numpy array
-                
-            Returns:
-                numpy.ndarray: Cleaned image
-            """
-            if not any(self.current_models.values()):
-                logger.warning("No models in pipeline, returning original image")
+        Returns:
+            numpy.ndarray: Cleaned image
+        """
+        if not any(self.current_models.values()):
+            logger.warning("No models in pipeline, returning original image")
+            return image
+        
+        # Get active models for logging
+        active_models = [name for name, model in self.current_models.items() if model is not None]
+        if active_models:
+            logger.info(f"Processing image with active models: {', '.join(active_models)}")
+        
+        # Try to use available models but handle failures gracefully
+        try:
+            # Clone the input image to avoid modifying the original
+            current_image = image.copy()
+            
+            # Process with each model in sequence
+            for model_type, model in self.current_models.items():
+                if model is not None:
+                    try:
+                        current_image = model.process(current_image)
+                        logger.debug(f"Processed with {model_type} successfully")
+                    except Exception as e:
+                        logger.error(f"Error processing with {model_type}: {e}")
+                        # Continue with the current image if a model fails
+            
+            # Make sure the result is valid
+            if current_image is None or not isinstance(current_image, np.ndarray):
+                logger.error("Pipeline produced invalid output, falling back to original image")
                 return image
             
-            # Get active models for logging
-            active_models = [name for name, model in self.current_models.items() if model is not None]
-            if active_models:
-                logger.info(f"Processing image with active models: {', '.join(active_models)}")
+            # Make sure result shape matches input, resizing if necessary
+            if current_image.shape[:2] != image.shape[:2]:
+                logger.warning(f"Output shape {current_image.shape[:2]} doesn't match input {image.shape[:2]}, resizing")
+                from data.processing.transforms import resize_image
+                current_image = resize_image(current_image, (image.shape[1], image.shape[0]))
             
-            # Try to use available models but handle failures gracefully
-            try:
-                # Clone the input image to avoid modifying the original
-                current_image = image.copy()
-                
-                # Process with each model in sequence
-                for model_type, model in self.current_models.items():
-                    if model is not None:
-                        try:
-                            current_image = model.process(current_image)
-                            logger.debug(f"Processed with {model_type} successfully")
-                        except Exception as e:
-                            logger.error(f"Error processing with {model_type}: {e}")
-                            # Continue with the current image if a model fails
-                
-                # Make sure the result is valid
-                if current_image is None or not isinstance(current_image, np.ndarray):
-                    logger.error("Pipeline produced invalid output, falling back to original image")
-                    return image
-                
-                # Make sure result shape matches input, resizing if necessary
-                if current_image.shape[:2] != image.shape[:2]:
-                    logger.warning(f"Output shape {current_image.shape[:2]} doesn't match input {image.shape[:2]}, resizing")
-                    from data.processing.transforms import resize_image
-                    current_image = resize_image(current_image, (image.shape[1], image.shape[0]))
-                
-                return current_image
-            except Exception as e:
-                logger.error(f"Error in cleaning pipeline: {e}")
-                logger.warning("Falling back to original image due to pipeline error")
-                return image
+            return current_image
+        except Exception as e:
+            logger.error(f"Error in cleaning pipeline: {e}")
+            logger.warning("Falling back to original image due to pipeline error")
+            return image
     
     def get_active_models(self):
         """
