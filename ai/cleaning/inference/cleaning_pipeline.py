@@ -51,65 +51,127 @@ class CleaningPipeline:
         self._initialize_models()
     
     def _initialize_models(self):
-        """Initialize pipeline with default models based on configuration."""
-        logger.info(f"Initializing pipeline with {'novel' if self.use_novel_models else 'foundational'} models")
-        
-        # Try to load all models, but continue even if some fail
-        success = True
-        
-        # Load denoising model
-        try:
-            if self.use_novel_models:
-                denoising_success = self.set_denoising_model("novel_diffusion_denoiser")
+            """Initialize pipeline with default models based on configuration."""
+            logger.info(f"Initializing pipeline with {'novel' if self.use_novel_models else 'foundational'} models")
+            
+            # Try to load all models, but continue even if some fail
+            success = True
+            
+            # Load denoising model
+            try:
+                if self.use_novel_models:
+                    denoising_success = self.set_denoising_model("novel_diffusion_denoiser")
+                else:
+                    denoising_success = self.set_denoising_model("dncnn_denoiser")
+                
+                if not denoising_success:
+                    logger.warning("Denoising model failed to load, continuing without it")
+            except Exception as e:
+                logger.error(f"Error loading denoising model: {e}")
+                denoising_success = False
+            
+            # Load super-resolution model
+            try:
+                # Get scale factor from config
+                scale_factor = self.config.get("models.super_resolution.scale_factor", 2)
+                
+                if self.use_novel_models:
+                    sr_success = self.set_super_resolution_model("novel_restormer", scale_factor=scale_factor)
+                else:
+                    sr_success = self.set_super_resolution_model("edsr_super_resolution", scale_factor=scale_factor)
+                
+                if not sr_success:
+                    logger.warning("Super-resolution model failed to load, continuing without it")
+            except Exception as e:
+                logger.error(f"Error loading super-resolution model: {e}")
+                sr_success = False
+            
+            # Load artifact removal model
+            try:
+                if self.use_novel_models:
+                    ar_success = self.set_artifact_removal_model("novel_stylegan_artifact_removal")
+                else:
+                    ar_success = self.set_artifact_removal_model("unet_artifact_removal")
+                
+                if not ar_success:
+                    logger.warning("Artifact removal model failed to load, continuing without it")
+            except Exception as e:
+                logger.error(f"Error loading artifact removal model: {e}")
+                ar_success = False
+            
+            # Return overall success status
+            success = denoising_success or sr_success or ar_success
+            if not success:
+                logger.warning("No models were loaded successfully")
             else:
-                denoising_success = self.set_denoising_model("dncnn_denoiser")
+                # Using ASCII symbols instead of Unicode for better compatibility
+                logger.info(f"Loaded models: " + 
+                        (f"denoising ({'Y' if denoising_success else 'N'}), " if denoising_success is not None else "") +
+                        (f"super-resolution ({'Y' if sr_success else 'N'}), " if sr_success is not None else "") +
+                        (f"artifact removal ({'Y' if ar_success else 'N'})" if ar_success is not None else ""))
             
-            if not denoising_success:
-                logger.warning("Denoising model failed to load, continuing without it")
-        except Exception as e:
-            logger.error(f"Error loading denoising model: {e}")
-            denoising_success = False
+            return success
+    
+    
+    def _ensure_models_same_device(self):
+        """
+        Ensure all models in the pipeline are using the same device.
+        This prevents issues with tensor device mismatches during inference.
+        """
+        # First, determine what device should be used
+        target_device = None
         
-        # Load super-resolution model
-        try:
-            # Get scale factor from config
-            scale_factor = self.config.get("models.super_resolution.scale_factor", 2)
+        # Check if any models are initialized and use its device
+        for model in self.current_models.values():
+            if model is not None and hasattr(model, 'device'):
+                target_device = model.device
+                break
+        
+        # If no device found, default to 'cpu'
+        if target_device is None:
+            target_device = 'cpu'
             
-            if self.use_novel_models:
-                sr_success = self.set_super_resolution_model("novel_restormer", scale_factor=scale_factor)
-            else:
-                sr_success = self.set_super_resolution_model("edsr_super_resolution", scale_factor=scale_factor)
+        logger.info(f"Ensuring all models use device: {target_device}")
+        
+        # Now make sure all models use the same device
+        for model_type, model in self.current_models.items():
+            if model is not None and hasattr(model, 'device') and model.device != target_device:
+                try:
+                    logger.info(f"Moving {model_type} from {model.device} to {target_device}")
+                    model.device = target_device
+                    
+                    # If the model has a torch_device attribute, update it too
+                    if hasattr(model, 'torch_device'):
+                        model.torch_device = torch.device(target_device)
+                        
+                        # If the model has an internal model, move it to the target device
+                        if hasattr(model, 'model') and hasattr(model.model, 'to'):
+                            model.model.to(model.torch_device)
+                except Exception as e:
+                    logger.error(f"Error moving {model_type} to {target_device}: {e}")
+
+    def enable_all_models(self):
+        """
+        Enable all cleaning models in the pipeline.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        success = self._initialize_models()
+        
+        # Ensure all models are on the same device
+        if success:
+            self._ensure_models_same_device()
             
-            if not sr_success:
-                logger.warning("Super-resolution model failed to load, continuing without it")
-        except Exception as e:
-            logger.error(f"Error loading super-resolution model: {e}")
-            sr_success = False
-        
-        # Load artifact removal model
-        try:
-            if self.use_novel_models:
-                ar_success = self.set_artifact_removal_model("novel_stylegan_artifact_removal")
-            else:
-                ar_success = self.set_artifact_removal_model("unet_artifact_removal")
-            
-            if not ar_success:
-                logger.warning("Artifact removal model failed to load, continuing without it")
-        except Exception as e:
-            logger.error(f"Error loading artifact removal model: {e}")
-            ar_success = False
-        
-        # Return overall success status
-        success = denoising_success or sr_success or ar_success
-        if not success:
-            logger.warning("No models were loaded successfully")
-        else:
-            logger.info(f"Loaded models: " + 
-                    (f"denoising ({'✓' if denoising_success else '✗'}), " if denoising_success is not None else "") +
-                    (f"super-resolution ({'✓' if sr_success else '✗'}), " if sr_success is not None else "") +
-                    (f"artifact removal ({'✓' if ar_success else '✗'})" if ar_success is not None else ""))
-        
         return success
+    
+    
+    
+    
+    
+    
+    
+    
     
     def set_artifact_removal_model(self, model_type, model_path=None, device=None):
         """
@@ -416,31 +478,55 @@ class CleaningPipeline:
         return True
     
     def process(self, image):
-        """
-        Process an image through the cleaning pipeline.
-        
-        Args:
-            image: Input medical image as numpy array
+            """
+            Process an image through the cleaning pipeline.
             
-        Returns:
-            numpy.ndarray: Cleaned image
-        """
-        if not any(self.current_models.values()):
-            logger.warning("No models in pipeline, returning original image")
-            return image
-        
-        # Try to use available models but handle failures gracefully
-        try:
-            # Get active models
+            Args:
+                image: Input medical image as numpy array
+                
+            Returns:
+                numpy.ndarray: Cleaned image
+            """
+            if not any(self.current_models.values()):
+                logger.warning("No models in pipeline, returning original image")
+                return image
+            
+            # Get active models for logging
             active_models = [name for name, model in self.current_models.items() if model is not None]
-            logger.info(f"Processing image with active models: {', '.join(active_models)}")
+            if active_models:
+                logger.info(f"Processing image with active models: {', '.join(active_models)}")
             
-            result = self.pipeline.process(image)
-            return result
-        except Exception as e:
-            logger.error(f"Error in cleaning pipeline: {e}")
-            logger.warning("Falling back to original image due to pipeline error")
-            return image
+            # Try to use available models but handle failures gracefully
+            try:
+                # Clone the input image to avoid modifying the original
+                current_image = image.copy()
+                
+                # Process with each model in sequence
+                for model_type, model in self.current_models.items():
+                    if model is not None:
+                        try:
+                            current_image = model.process(current_image)
+                            logger.debug(f"Processed with {model_type} successfully")
+                        except Exception as e:
+                            logger.error(f"Error processing with {model_type}: {e}")
+                            # Continue with the current image if a model fails
+                
+                # Make sure the result is valid
+                if current_image is None or not isinstance(current_image, np.ndarray):
+                    logger.error("Pipeline produced invalid output, falling back to original image")
+                    return image
+                
+                # Make sure result shape matches input, resizing if necessary
+                if current_image.shape[:2] != image.shape[:2]:
+                    logger.warning(f"Output shape {current_image.shape[:2]} doesn't match input {image.shape[:2]}, resizing")
+                    from data.processing.transforms import resize_image
+                    current_image = resize_image(current_image, (image.shape[1], image.shape[0]))
+                
+                return current_image
+            except Exception as e:
+                logger.error(f"Error in cleaning pipeline: {e}")
+                logger.warning("Falling back to original image due to pipeline error")
+                return image
     
     def get_active_models(self):
         """

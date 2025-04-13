@@ -148,18 +148,29 @@ class TorchModel(BaseModel):
         return tensor
     
     def inference(self, preprocessed_tensor):
-        """
-        Run inference with the PyTorch model.
-        
-        Args:
-            preprocessed_tensor: Preprocessed input tensor
+            """
+            Run inference with the PyTorch model.
             
-        Returns:
-            torch.Tensor: Model output tensor
-        """
-        with torch.no_grad():
-            output = self.model(preprocessed_tensor)
-        return output
+            Args:
+                preprocessed_tensor: Preprocessed input tensor
+                
+            Returns:
+                torch.Tensor: Model output tensor
+            """
+            # Make sure the model and preprocessed tensor are on the same device
+            current_device = next(self.model.parameters()).device
+            if preprocessed_tensor.device != current_device:
+                preprocessed_tensor = preprocessed_tensor.to(current_device)
+                
+            with torch.no_grad():
+                try:
+                    output = self.model(preprocessed_tensor)
+                    return output
+                except Exception as e:
+                    logger.error(f"Error during model inference: {e}")
+                    # Return input as fallback if error occurs during inference
+                    logger.warning("Returning input tensor as fallback due to inference error")
+                    return preprocessed_tensor
     
     def postprocess(self, model_output, original_image=None):
         """

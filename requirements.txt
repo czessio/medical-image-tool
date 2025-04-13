@@ -1,0 +1,20 @@
+# Core requirements
+numpy>=1.23.0
+pillow>=9.2.0
+pyqt6>=6.4.0
+pyqt6-svg>=6.4.0  # For SVG support in the new UI
+psutil>=5.9.0
+
+# Optional requirements for DICOM handling
+pydicom>=2.3.0
+
+# AI model requirements
+torch>=1.13.0
+torchvision>=0.14.0
+
+# File format handling
+opencv-python>=4.6.0  # For some image processing tasks
+matplotlib>=3.6.0  # For visualization and plotting
+
+# Logging and monitoring
+tqdm>=4.64.0  # Progress bars

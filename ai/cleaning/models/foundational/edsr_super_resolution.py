@@ -325,28 +325,42 @@ class EDSRSuperResolution(TorchModel):
         return tensor
     
     def inference(self, preprocessed_tensor):
-        """
-        Run inference with the super-resolution model.
-        
-        Args:
-            preprocessed_tensor: Preprocessed input tensor
+            """
+            Run inference with the super-resolution model.
             
-        Returns:
-            torch.Tensor: Super-resolved output tensor
-        """
-        with torch.no_grad():
-            try:
-                return self.model(preprocessed_tensor)
-            except Exception as e:
-                logger.error(f"Error in model inference: {e}")
-                # Fallback to just resizing the input tensor
-                logger.warning("Using fallback upsampling")
-                return F.interpolate(
-                    preprocessed_tensor, 
-                    scale_factor=self.scale_factor, 
-                    mode='bilinear', 
-                    align_corners=False
-                )
+            Args:
+                preprocessed_tensor: Preprocessed input tensor
+                
+            Returns:
+                torch.Tensor: Super-resolved output tensor
+            """
+            with torch.no_grad():
+                try:
+                    # Ensure tensor is on the same device as the model
+                    current_device = next(self.model.parameters()).device
+                    if preprocessed_tensor.device != current_device:
+                        preprocessed_tensor = preprocessed_tensor.to(current_device)
+                    
+                    return self.model(preprocessed_tensor)
+                except Exception as e:
+                    logger.error(f"Error in model inference: {e}")
+                    # Fallback to just resizing the input tensor
+                    logger.warning("Using fallback upsampling")
+                    try:
+                        # Ensure tensor is on CPU for F.interpolate if there was a device issue
+                        if torch.cuda.is_available() and "CUDA" in str(e):
+                            preprocessed_tensor = preprocessed_tensor.cpu()
+                        
+                        return F.interpolate(
+                            preprocessed_tensor, 
+                            scale_factor=self.scale_factor, 
+                            mode='bilinear', 
+                            align_corners=False
+                        )
+                    except Exception as e2:
+                        logger.error(f"Error in fallback upsampling: {e2}")
+                        # If even the fallback fails, just return the input
+                        return preprocessed_tensor
     
     def postprocess(self, model_output, original_image=None):
         """

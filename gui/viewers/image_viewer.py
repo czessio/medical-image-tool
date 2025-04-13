@@ -1,8 +1,6 @@
-# File: gui/viewers/image_viewer.py
-
 """
 Image viewer component for medical image enhancement application.
-Provides basic image display with zooming, panning, and measurement tools.
+Provides professional image display with zooming, panning, and measurement tools.
 """
 import os
 import logging
@@ -13,7 +11,7 @@ from PyQt6.QtWidgets import (
     QWidget, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QVBoxLayout, QHBoxLayout, QLabel, QSlider, QToolBar, 
     QGraphicsRectItem, QGraphicsLineItem, QGraphicsEllipseItem, QGraphicsPathItem,
-    QGraphicsTextItem, QPushButton, QColorDialog
+    QGraphicsTextItem, QPushButton, QColorDialog, QFrame
 )
 from PyQt6.QtGui import (
     QPixmap, QImage, QPainter, QColor, QPen, QAction, QIcon, 
@@ -65,40 +63,7 @@ class ImageViewer(QWidget):
     imageChanged = pyqtSignal(np.ndarray)  # Emitted when image changes
     regionSelected = pyqtSignal(QRectF)    # Emitted when user selects a region
     annotationAdded = pyqtSignal(object)   # Emitted when an annotation is added
-    
-    
-    
-    
-    def _wheel_event(self, event):
-        """Handle mouse wheel events for zooming."""
-        delta = event.angleDelta().y()
-        
-        if delta > 0:
-            # Zoom in
-            factor = 1.1
-        else:
-            # Zoom out
-            factor = 1/1.1
-        
-        # Record the scene position before zoom
-        view_pos = event.position()
-        scene_pos = self.graphics_view.mapToScene(int(view_pos.x()), int(view_pos.y()))
-        
-        # Apply zoom
-        self.graphics_view.scale(factor, factor)
-        self.zoom_factor *= factor
-        
-        # Get the new scene position and translate to maintain position under cursor
-        new_scene_pos = self.graphics_view.mapToScene(int(view_pos.x()), int(view_pos.y()))
-        delta_scene_pos = new_scene_pos - scene_pos
-        self.graphics_view.translate(delta_scene_pos.x(), delta_scene_pos.y())
-        
-        self._update_zoom_label()
-    
-    
-    
-    
-    
+    zoomChanged = pyqtSignal(float)        # Emitted when zoom level changes
     
     def __init__(self, parent=None):
         """Initialize the image viewer."""
@@ -124,6 +89,7 @@ class ImageViewer(QWidget):
         # Main layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
         
         # Graphics view for image display
         self.graphics_view = QGraphicsView()
@@ -133,7 +99,15 @@ class ImageViewer(QWidget):
         self.graphics_view.setInteractive(True)
         self.graphics_view.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.graphics_view.viewport().setCursor(Qt.CursorShape.ArrowCursor)
-
+        
+        # Improve appearance by setting the style
+        self.graphics_view.setFrameShape(QFrame.Shape.NoFrame)
+        self.graphics_view.setStyleSheet("""
+            QGraphicsView {
+                background-color: #FFFFFF;
+                border: none;
+            }
+        """)
         
         # Scene to hold the image
         self.scene = QGraphicsScene()
@@ -147,10 +121,22 @@ class ImageViewer(QWidget):
         layout.addWidget(self.graphics_view)
         
         # Create info bar layout at the bottom
-        info_layout = QHBoxLayout()
+        info_bar = QFrame()
+        info_bar.setFrameShape(QFrame.Shape.StyledPanel)
+        info_bar.setStyleSheet("""
+            QFrame {
+                background-color: #F5F5F5;
+                border-top: 1px solid #DDDDDD;
+            }
+        """)
+        
+        info_layout = QHBoxLayout(info_bar)
+        info_layout.setContentsMargins(5, 2, 5, 2)
+        info_layout.setSpacing(10)
         
         # Image info label
         self.info_label = QLabel("No image loaded")
+        self.info_label.setStyleSheet("font-weight: bold;")
         info_layout.addWidget(self.info_label)
         
         # Zoom level display
@@ -165,12 +151,13 @@ class ImageViewer(QWidget):
         self.value_label = QLabel("Value: ---")
         info_layout.addWidget(self.value_label)
         
-        # Add info layout to main layout
-        layout.addLayout(info_layout)
+        # Add info bar to main layout
+        layout.addWidget(info_bar)
         
         # Create toolbar for tools
         self.toolbar = QToolBar()
-        self.toolbar.setIconSize(QSize(24, 24))
+        self.toolbar.setIconSize(QSize(20, 20))
+        self.toolbar.setVisible(False)  # Hide by default, can be shown with showToolbar()
         
         # Add zoom in/out actions
         self.zoom_in_action = QAction("Zoom In", self)
@@ -256,7 +243,12 @@ class ImageViewer(QWidget):
         self.tracking_timer.timeout.connect(self.update_pixel_info)
         self.tracking_timer.start(100)  # Update every 100 ms
     
+    def showToolbar(self, show=True):
+        """Show or hide the toolbar."""
+        self.toolbar.setVisible(show)
+    
     def eventFilter(self, obj, event):
+        """Filter events for the graphics view."""
         if obj is self.graphics_view.viewport():
             if event.type() == QEvent.Type.MouseMove:
                 self.handle_mouse_move(event)
@@ -269,8 +261,38 @@ class ImageViewer(QWidget):
             # Add wheel event handling
             elif event.type() == QEvent.Type.Wheel:
                 self._wheel_event(event)
+                return True  # Consume the event
     
         return super().eventFilter(obj, event)
+    
+    def _wheel_event(self, event):
+        """Handle mouse wheel events for zooming."""
+        delta = event.angleDelta().y()
+        
+        if delta > 0:
+            # Zoom in
+            factor = 1.1
+        else:
+            # Zoom out
+            factor = 1/1.1
+        
+        # Record the scene position before zoom
+        view_pos = event.position()
+        scene_pos = self.graphics_view.mapToScene(int(view_pos.x()), int(view_pos.y()))
+        
+        # Apply zoom
+        self.graphics_view.scale(factor, factor)
+        self.zoom_factor *= factor
+        
+        # Get the new scene position and translate to maintain position under cursor
+        new_scene_pos = self.graphics_view.mapToScene(int(view_pos.x()), int(view_pos.y()))
+        delta_scene_pos = new_scene_pos - scene_pos
+        self.graphics_view.translate(delta_scene_pos.x(), delta_scene_pos.y())
+        
+        self._update_zoom_label()
+        
+        # Emit signal for zoom change
+        self.zoomChanged.emit(self.zoom_factor)
     
     def handle_mouse_move(self, event):
         """Handle mouse move events."""
@@ -350,11 +372,6 @@ class ImageViewer(QWidget):
                 self.current_annotation_item = None
                 self.annotationAdded.emit(self.annotations[-1])
     
-    
-    
-    
-    
-    
     def handle_mouse_release(self, event):
         """Handle mouse release events."""
         if event.button() == Qt.MouseButton.LeftButton:
@@ -402,7 +419,7 @@ class ImageViewer(QWidget):
                 self.start_point.y(),
                 self.current_point.x(), 
                 self.current_point.y()
-    )
+            )
             
             # Update measurement text if in measure mode
             if self.current_annotation_item.mode == AnnotationMode.MEASURE and "text_item" in self.current_annotation_item.data:
@@ -418,8 +435,6 @@ class ImageViewer(QWidget):
                     (self.start_point.x() + self.current_point.x()) / 2,
                     (self.start_point.y() + self.current_point.y()) / 2
                 )
-                self.current_annotation_item.data["text_item"].setPos(mid_point + QPointF(5, 5))
-    
     def set_annotation_mode(self, mode):
         """Set the current annotation mode."""
         # Reset other action states
@@ -538,74 +553,88 @@ class ImageViewer(QWidget):
         # Clear annotations for new image
         self.clear_annotations()
     
+    
+    
+    
     def _update_pixmap(self):
-        """Update the displayed pixmap from the current image data."""
-        if self.image_data is None:
-            return
-        
-        # Create display image (handle windowing if needed)
-        if self.window_width is not None and self.window_center is not None:
-            from data.io.dicom_handler import DicomHandler
-            display_image = DicomHandler.apply_window_level(
-                self.image_data, self.metadata,
-                window=self.window_width, 
-                level=self.window_center
-            )
-        else:
-            display_image = self.image_data
-        
-        # Convert the numpy array to QImage
-        if np.issubdtype(display_image.dtype, np.floating):
-            display_image = (display_image * 255).clip(0, 255).astype(np.uint8)
-        
-        height, width = display_image.shape[:2]
-        
-        if len(display_image.shape) == 2:
-            # Grayscale image
-            q_image = QImage(
-                display_image.data,
-                width, height,
-                width,  # Bytes per line
-                QImage.Format.Format_Grayscale8
-            )
-        elif display_image.shape[2] == 3:
-            # RGB image
-            q_image = QImage(
-                display_image.data,
-                width, height,
-                width * 3,  # Bytes per line (3 channels)
-                QImage.Format.Format_RGB888
-            )
-        elif display_image.shape[2] == 4:
-            # RGBA image
-            q_image = QImage(
-                display_image.data,
-                width, height,
-                width * 4,  # Bytes per line (4 channels)
-                QImage.Format.Format_RGBA8888
-            )
-        else:
-            logger.error(f"Unsupported image format: {display_image.shape}")
-            return
-        
-        # Create pixmap from QImage
-        pixmap = QPixmap.fromImage(q_image)
-        self.pixmap_item.setPixmap(pixmap)
-        
-        # Update scene rect
-        self.scene.setSceneRect(QRectF(0, 0, width, height))
+            """Update the displayed pixmap from the current image data."""
+            if self.image_data is None:
+                return
+            
+            # Create display image (handle windowing if needed)
+            if self.window_width is not None and self.window_center is not None:
+                from data.io.dicom_handler import DicomHandler
+                display_image = DicomHandler.apply_window_level(
+                    self.image_data, self.metadata,
+                    window=self.window_width, 
+                    level=self.window_center
+                )
+            else:
+                display_image = self.image_data
+            
+            # Convert the numpy array to QImage
+            if np.issubdtype(display_image.dtype, np.floating):
+                display_image = (display_image * 255).clip(0, 255).astype(np.uint8)
+            
+            height, width = display_image.shape[:2]
+            
+            # Make sure display_image is contiguous in memory
+            if not display_image.flags['C_CONTIGUOUS']:
+                display_image = np.ascontiguousarray(display_image)
+            
+            if len(display_image.shape) == 2:
+                # Grayscale image
+                q_image = QImage(
+                    display_image.tobytes(),  # Use tobytes() instead of data
+                    width, height,
+                    width,  # Bytes per line
+                    QImage.Format.Format_Grayscale8
+                )
+            elif display_image.shape[2] == 3:
+                # RGB image
+                q_image = QImage(
+                    display_image.tobytes(),  # Use tobytes() instead of data
+                    width, height,
+                    width * 3,  # Bytes per line (3 channels)
+                    QImage.Format.Format_RGB888
+                )
+            elif display_image.shape[2] == 4:
+                # RGBA image
+                q_image = QImage(
+                    display_image.tobytes(),  # Use tobytes() instead of data
+                    width, height,
+                    width * 4,  # Bytes per line (4 channels)
+                    QImage.Format.Format_RGBA8888
+                )
+            else:
+                logger.error(f"Unsupported image format: {display_image.shape}")
+                return
+            
+            # Create pixmap from QImage
+            pixmap = QPixmap.fromImage(q_image)
+            self.pixmap_item.setPixmap(pixmap)
+            
+            # Update scene rect
+            self.scene.setSceneRect(QRectF(0, 0, width, height))
+    
+    
+    
+    
+    
     
     def zoom_in(self):
         """Zoom in by a fixed factor."""
         self.zoom_factor *= 1.2
         self.graphics_view.scale(1.2, 1.2)
         self._update_zoom_label()
+        self.zoomChanged.emit(self.zoom_factor)
     
     def zoom_out(self):
         """Zoom out by a fixed factor."""
         self.zoom_factor /= 1.2
         self.graphics_view.scale(1/1.2, 1/1.2)
         self._update_zoom_label()
+        self.zoomChanged.emit(self.zoom_factor)
     
     def zoom_fit(self):
         """Zoom to fit the image in the view."""
@@ -631,6 +660,7 @@ class ImageViewer(QWidget):
         self.zoom_factor = scale
         
         self._update_zoom_label()
+        self.zoomChanged.emit(self.zoom_factor)
     
     def _update_zoom_label(self):
         """Update the zoom level display."""
