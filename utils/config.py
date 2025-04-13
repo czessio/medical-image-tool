@@ -10,11 +10,12 @@ from pathlib import Path
 class Config:
     """Manages application configuration settings."""
     
-    # Default configuration values
+
 # Modify in utils/config.py - update DEFAULT_CONFIG
     DEFAULT_CONFIG = {
         "models": {
             "use_novel": False,  # Default to foundational models
+            "auto_download": False,  # Disable auto-downloading
             "denoising": {
                 "foundational": {
                     "dncnn_denoiser": {
@@ -43,6 +44,9 @@ class Config:
                 },
                 "device": "auto"
             }
+        },
+        "processing": {
+            "auto_download_models": False  # Disable auto-downloading
         }
     }
 

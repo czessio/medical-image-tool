@@ -117,7 +117,82 @@ class CleaningPipeline:
         
         return success
     
-    # In ai/cleaning/inference/cleaning_pipeline.py, improve set_denoising_model:
+    
+    
+    
+    
+    
+    def set_artifact_removal_model(self, model_type, model_path=None, device=None):
+        """
+        Set the artifact removal model for the pipeline.
+        
+        Args:
+            model_type: Type of artifact removal model to use
+            model_path: Path to model weights (None to use default)
+            device: Device to run inference on (None to use default)
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info(f"Setting artifact removal model: {model_type}")
+        
+        # Remove existing model if present
+        if self.current_models["artifact_removal"] is not None:
+            idx = self.pipeline.models.index(self.current_models["artifact_removal"])
+            self.pipeline.models.pop(idx)
+            self.pipeline.model_names.pop(idx)
+            self.current_models["artifact_removal"] = None
+        
+        # Get model path from config if not provided
+        if model_path is None:
+            model_category = "novel" if self.use_novel_models else "foundational"
+            config_path = f"models.artifact_removal.{model_category}.{model_type}.model_path"
+            model_path = self.config.get(config_path)
+            
+            # Fix path if it has duplicated "foundational"
+            if model_path and "foundational/foundational" in model_path:
+                model_path = model_path.replace("foundational/foundational", "foundational")
+                
+            # Check for specific model names
+            if model_type == "unet_artifact_removal":
+                # Try standard paths
+                standard_paths = [
+                    f"weights/foundational/artifact_removal/G_ema_ep_82.pth",
+                    f"weights/foundational/foundational/artifact_removal/G_ema_ep_82.pth"
+                ]
+                for path in standard_paths:
+                    if os.path.exists(path):
+                        model_path = path
+                        break
+        
+        # Get device from config if not provided
+        if device is None:
+            device = self.config.get("models.artifact_removal.device", "auto")
+        
+        # Create and add model
+        model = ModelRegistry.create(model_type, model_path=model_path, device=device)
+        if model is None:
+            logger.error(f"Failed to create artifact removal model: {model_type}")
+            return False
+        
+        self.pipeline.add_model(model, f"artifact_removal_{model_type}")
+        self.current_models["artifact_removal"] = model
+        return True
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     def set_denoising_model(self, model_type, model_path=None, device=None):
         """
         Set the denoising model for the pipeline.
@@ -154,7 +229,9 @@ class CleaningPipeline:
                 # Try standard paths
                 standard_paths = [
                     f"weights/foundational/denoising/dncnn_gray_blind.pth",
-                    f"weights/foundational/denoising/dncnn_25.pth"
+                    f"weights/foundational/denoising/dncnn_25.pth",
+                    f"weights/foundational/foundational/denoising/dncnn_gray_blind.pth",
+                    f"weights/foundational/foundational/denoising/dncnn_25.pth"
                 ]
                 for path in standard_paths:
                     if os.path.exists(path):
@@ -174,6 +251,11 @@ class CleaningPipeline:
         self.pipeline.add_model(model, f"denoising_{model_type}")
         self.current_models["denoising"] = model
         return True
+    
+    
+    
+    
+    
     
     def set_super_resolution_model(self, model_type, model_path=None, device=None, scale_factor=None):
         """
@@ -197,74 +279,152 @@ class CleaningPipeline:
             self.pipeline.model_names.pop(idx)
             self.current_models["super_resolution"] = None
         
+        # Get scale factor from config if not provided
+        if scale_factor is None:
+            scale_factor = self.config.get("models.super_resolution.scale_factor", 2)
+        
         # Get model path from config if not provided
         if model_path is None:
             model_category = "novel" if self.use_novel_models else "foundational"
-            config_path = f"models.super_resolution.{model_category}.{model_type}.model_path"
-            model_path = self.config.get(config_path)
+            
+            # Choose path based on scale factor for RealESRGAN models
+            if model_type == "edsr_super_resolution" and model_category == "foundational":
+                if scale_factor == 2:
+                    model_path = f"weights/{model_category}/super_resolution/RealESRGAN_x2.pth"
+                elif scale_factor == 4:
+                    model_path = f"weights/{model_category}/super_resolution/RealESRGAN_x4.pth"
+                elif scale_factor == 8:
+                    model_path = f"weights/{model_category}/super_resolution/RealESRGAN_x8.pth"
+                else:
+                    # Default to x2 if unknown scale factor
+                    model_path = f"weights/{model_category}/super_resolution/RealESRGAN_x2.pth"
+                    scale_factor = 2
+                    logger.warning(f"Unknown scale factor {scale_factor}, defaulting to 2")
+            else:
+                # For other model types, use the config path
+                config_path = f"models.super_resolution.{model_category}.{model_type}.model_path"
+                model_path = self.config.get(config_path)
+            
+            # Fix path if it has duplicated "foundational"
+            if model_path and "foundational/foundational" in model_path:
+                model_path = model_path.replace("foundational/foundational", "foundational")
         
         # Get device from config if not provided
         if device is None:
             device = self.config.get("models.super_resolution.device", "auto")
         
-        # Get scale factor from config if not provided
-        if scale_factor is None:
-            scale_factor = self.config.get("models.super_resolution.scale_factor", 2)
-        
-        # Create and add model
-        model = ModelRegistry.create(model_type, model_path=model_path, device=device)
-        if model is None:
-            logger.error(f"Failed to create super-resolution model: {model_type}")
+        # Create model with specific parameters
+        try:
+            # Create model with scale factor
+            model = ModelRegistry.create(
+                model_type, 
+                model_path=model_path, 
+                device=device, 
+                scale_factor=scale_factor
+            )
+            
+            if model is None:
+                logger.error(f"Failed to create super-resolution model: {model_type}")
+                return False
+            
+            # Set scale factor on model instance if it has that attribute
+            if hasattr(model, "scale_factor"):
+                model.scale_factor = scale_factor
+                logger.info(f"Set super-resolution scale factor to {scale_factor}")
+            
+            # Add to pipeline
+            self.pipeline.add_model(model, f"super_resolution_{model_type}_x{scale_factor}")
+            self.current_models["super_resolution"] = model
+            return True
+        except Exception as e:
+            logger.error(f"Error setting super-resolution model: {e}")
             return False
-        
-        # Set scale factor if model supports it
-        if hasattr(model, "scale_factor"):
-            model.scale_factor = scale_factor
-        
-        self.pipeline.add_model(model, f"super_resolution_{model_type}")
-        self.current_models["super_resolution"] = model
-        return True
-    
-    def set_artifact_removal_model(self, model_type, model_path=None, device=None):
+
+
+
+
+
+    def set_scale_factor(self, scale_factor):
         """
-        Set the artifact removal model for the pipeline.
+        Set the scale factor for super-resolution.
         
         Args:
-            model_type: Type of artifact removal model to use
-            model_path: Path to model weights (None to use default)
-            device: Device to run inference on (None to use default)
+            scale_factor: Upscaling factor (2, 4, or 8)
             
         Returns:
             bool: True if successful, False otherwise
         """
-        logger.info(f"Setting artifact removal model: {model_type}")
-        
-        # Remove existing model if present
-        if self.current_models["artifact_removal"] is not None:
-            idx = self.pipeline.models.index(self.current_models["artifact_removal"])
-            self.pipeline.models.pop(idx)
-            self.pipeline.model_names.pop(idx)
-            self.current_models["artifact_removal"] = None
-        
-        # Get model path from config if not provided
-        if model_path is None:
-            model_category = "novel" if self.use_novel_models else "foundational"
-            config_path = f"models.artifact_removal.{model_category}.{model_type}.model_path"
-            model_path = self.config.get(config_path)
-        
-        # Get device from config if not provided
-        if device is None:
-            device = self.config.get("models.artifact_removal.device", "auto")
-        
-        # Create and add model
-        model = ModelRegistry.create(model_type, model_path=model_path, device=device)
-        if model is None:
-            logger.error(f"Failed to create artifact removal model: {model_type}")
+        # Validate scale factor
+        if scale_factor not in [2, 4, 8]:
+            logger.error(f"Invalid scale factor: {scale_factor}. Must be 2, 4, or 8.")
             return False
         
-        self.pipeline.add_model(model, f"artifact_removal_{model_type}")
-        self.current_models["artifact_removal"] = model
+        logger.info(f"Setting super-resolution scale factor to {scale_factor}")
+        
+        # Update config
+        self.config.set("models.super_resolution.scale_factor", scale_factor)
+        
+        # If we have a super-resolution model, reload it with the new scale factor
+        if self.current_models["super_resolution"] is not None:
+            # Get the current model type from the name
+            for name in self.pipeline.model_names:
+                if "super_resolution" in name:
+                    # Extract model type from name like "super_resolution_edsr_super_resolution_x2"
+                    parts = name.split("_")
+                    if len(parts) >= 3:
+                        # Skip the first part ("super_resolution") and remove the scale factor part
+                        # The model type is everything in between
+                        model_type = "_".join(parts[1:-1])
+                        if model_type.endswith("_x2") or model_type.endswith("_x4") or model_type.endswith("_x8"):
+                            # Remove the scale factor suffix if it's part of the model type
+                            model_type = model_type[:-3]
+                        
+                        return self.set_super_resolution_model(model_type, scale_factor=scale_factor)
+        
         return True
+
+
+
+
+
+
+
+    def set_scale_factor(self, scale_factor):
+        """
+        Set the scale factor for super-resolution.
+        
+        Args:
+            scale_factor: Upscaling factor (2, 4, or 8)
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        # Validate scale factor
+        if scale_factor not in [2, 4, 8]:
+            logger.error(f"Invalid scale factor: {scale_factor}. Must be 2, 4, or 8.")
+            return False
+        
+        # Update config
+        self.config.set("models.super_resolution.scale_factor", scale_factor)
+        
+        # If we have a super-resolution model, update it
+        if self.current_models["super_resolution"] is not None:
+            model_type = None
+            for name in self.pipeline.model_names:
+                if "super_resolution" in name:
+                    # Extract model type from name
+                    parts = name.split("_")
+                    if len(parts) >= 3:
+                        model_type = parts[1]
+                    break
+            
+            if model_type:
+                return self.set_super_resolution_model(model_type, scale_factor=scale_factor)
+        
+        return True
+    
+    
+    
     
     
     

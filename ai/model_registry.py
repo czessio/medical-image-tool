@@ -43,6 +43,10 @@ class ModelRegistry:
         
         return cls._registry[name]
     
+    
+    
+    
+    
     @classmethod
     def create(cls, name, *args, **kwargs):
         """
@@ -68,32 +72,49 @@ class ModelRegistry:
             
             # Handle paths that don't include the model type subdirectory
             original_path = kwargs['model_path']
-            if not os.path.exists(original_path):
+            
+            # Specifically handle "dncnn_gray_blind.pth" to "dncnn_25.pth" conversion
+            if "dncnn_gray_blind.pth" in original_path:
+                alternative_path = original_path.replace("dncnn_gray_blind.pth", "dncnn_25.pth")
+                if os.path.exists(alternative_path):
+                    logger.info(f"Using alternative denoising model: {alternative_path}")
+                    kwargs['model_path'] = alternative_path
+            
+            # Specifically handle "edsr_x2.pt" to "RealESRGAN_x2.pth" conversion
+            if "edsr_x2.pt" in original_path:
+                alternative_path = original_path.replace("edsr_x2.pt", "RealESRGAN_x2.pth")
+                if os.path.exists(alternative_path):
+                    logger.info(f"Using alternative super-resolution model: {alternative_path}")
+                    kwargs['model_path'] = alternative_path
+            
+            # If path doesn't exist, try to find it
+            if not os.path.exists(kwargs['model_path']):
                 # Try to find the model in the correct location
                 model_basename = os.path.basename(original_path)
                 for model_type in ["denoising", "super_resolution", "artifact_removal"]:
-                    alternate_path = f"weights/foundational/{model_type}/{model_basename}"
-                    if os.path.exists(alternate_path):
-                        logger.info(f"Using alternate model path: {alternate_path}")
-                        kwargs['model_path'] = alternate_path
-                        break
-                    # Try with known model names
-                    if name == "dncnn_denoiser":
-                        alt_path = f"weights/foundational/denoising/dncnn_gray_blind.pth"
+                    # Handle different file extensions and known substitutions
+                    if model_type == "denoising" and name == "dncnn_denoiser":
+                        alternatives = ["dncnn_25.pth", "dncnn_gray_blind.pth"]
+                        for alt in alternatives:
+                            alt_path = f"weights/foundational/{model_type}/{alt}"
+                            if os.path.exists(alt_path):
+                                logger.info(f"Using alternate denoising path: {alt_path}")
+                                kwargs['model_path'] = alt_path
+                                break
+                    
+                    elif model_type == "super_resolution" and name == "edsr_super_resolution":
+                        alternatives = ["RealESRGAN_x2.pth", "edsr_x2.pt", "RealESRGAN_x4.pth", "RealESRGAN_x8.pth"]
+                        for alt in alternatives:
+                            alt_path = f"weights/foundational/{model_type}/{alt}" 
+                            if os.path.exists(alt_path):
+                                logger.info(f"Using alternate super-resolution path: {alt_path}")
+                                kwargs['model_path'] = alt_path
+                                break
+                    
+                    elif model_type == "artifact_removal" and name == "unet_artifact_removal":
+                        alt_path = f"weights/foundational/{model_type}/G_ema_ep_82.pth"
                         if os.path.exists(alt_path):
-                            logger.info(f"Using known dncnn path: {alt_path}")
-                            kwargs['model_path'] = alt_path
-                            break
-                    elif name == "edsr_super_resolution":
-                        alt_path = f"weights/foundational/super_resolution/edsr_x2.pt"
-                        if os.path.exists(alt_path):
-                            logger.info(f"Using known edsr path: {alt_path}")
-                            kwargs['model_path'] = alt_path
-                            break
-                    elif name == "unet_artifact_removal":
-                        alt_path = f"weights/foundational/artifact_removal/G_ema_ep_82.pth"
-                        if os.path.exists(alt_path):
-                            logger.info(f"Using known unet path: {alt_path}")
+                            logger.info(f"Using artifact removal path: {alt_path}")
                             kwargs['model_path'] = alt_path
                             break
         
@@ -106,6 +127,10 @@ class ModelRegistry:
         except Exception as e:
             logger.error(f"Error creating model instance: {e}")
             return None
+    
+    
+    
+    
     
     @classmethod
     def list_available(cls):

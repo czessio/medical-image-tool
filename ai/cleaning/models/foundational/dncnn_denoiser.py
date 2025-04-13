@@ -39,7 +39,7 @@ class DnCNN(nn.Module):
         """
         super(DnCNN, self).__init__()
         
-        # First layer: Conv+ReLU
+        # Original architecture implementation
         self.first_layer = nn.Sequential(
             nn.Conv2d(in_channels, features, kernel_size=3, padding=1, bias=False),
             nn.ReLU(inplace=True)
@@ -58,6 +58,19 @@ class DnCNN(nn.Module):
             
         # Last layer: Conv
         self.last_layer = nn.Conv2d(features, out_channels, kernel_size=3, padding=1, bias=False)
+        
+        # Additional implementation for compatibility with dncnn_25.pth weight format
+        # This matches the structure expected by the weights file
+        self.model = nn.Sequential()
+        for i in range(num_layers):
+            if i == 0:
+                self.model.add_module(f'{i*2}', nn.Conv2d(in_channels, features, kernel_size=3, padding=1, bias=True))
+                self.model.add_module(f'{i*2+1}', nn.ReLU(inplace=True))
+            elif i == num_layers - 1:
+                self.model.add_module(f'{i*2}', nn.Conv2d(features, out_channels, kernel_size=3, padding=1, bias=True))
+            else:
+                self.model.add_module(f'{i*2}', nn.Conv2d(features, features, kernel_size=3, padding=1, bias=True))
+                self.model.add_module(f'{i*2+1}', nn.ReLU(inplace=True))
         
         # Initialize weights
         self._initialize_weights()
@@ -84,11 +97,8 @@ class DnCNN(nn.Module):
         Returns:
             Denoised image tensor
         """
-        # Extract noise component
-        residual = self.first_layer(x)
-        for layer in self.middle_layers:
-            residual = layer(residual)
-        residual = self.last_layer(residual)
+        # Use the sequential model implementation which matches the weight file
+        residual = self.model(x)
         
         # Subtract the noise from the input (residual learning)
         return x - residual
@@ -132,6 +142,20 @@ class DnCNNDenoiser(TorchModel):
         )
         
         return model
+    
+    def _custom_load_state_dict(self, state_dict):
+        """Custom loading function for matching dncnn_25.pth weight file structure"""
+        # The weight file has keys like 'model.0.weight', 'model.0.bias', etc.
+        logger.info("Using custom weight loading for DnCNN model")
+        
+        # The model expects the same naming structure, so we can use the state_dict directly
+        try:
+            self.model.model.load_state_dict(state_dict)
+            logger.info("Model weights loaded successfully with custom mapping")
+            return True
+        except Exception as e:
+            logger.error(f"Error in custom weight loading: {e}")
+            return False
     
     def preprocess(self, image, noise_level=None):
         """

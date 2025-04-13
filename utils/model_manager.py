@@ -164,21 +164,17 @@ class ModelManager:
         # Get the model path
         model_path = self.downloader.get_model_path(model_id)
         
+        
+        
+        
         if model_path is None or not model_path.exists():
-            # Model not found, try to download it
-            if auto_download is None:
-                auto_download = self.config.get("processing.auto_download_models", True)
-                
-            if auto_download:
-                logger.info(f"Downloading model: {model_id}")
-                model_path = self.downloader.download_model(model_id)
-                
-                if model_path is None:
-                    logger.error(f"Failed to download model: {model_id}")
-                    return None
-            else:
-                logger.error(f"Model not found and auto-download disabled: {model_id}")
-                return None
+            logger.error(f"Model file not found: {model_id}")
+            return None
+        
+        
+        
+        
+        
         
         # Create the model
         model = ModelRegistry.create(model_id, model_path=str(model_path))
