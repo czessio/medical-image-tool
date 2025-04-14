@@ -23,6 +23,12 @@ class Config:
                         "model_path": "weights/foundational/denoising/dncnn_gray_blind.pth"
                     }
                 },
+                "novel": {
+                    "novel_diffusion_denoiser": {
+                        "enabled": True,
+                        "model_path": "weights/novel/denoising/diffusion_denoiser.pth"
+                    }
+                },
                 "device": "auto"  # auto, cpu, cuda
             },
             "super_resolution": {
@@ -30,6 +36,12 @@ class Config:
                     "edsr_super_resolution": {
                         "enabled": True,
                         "model_path": "weights/foundational/super_resolution/edsr_x2.pt"
+                    }
+                },
+                "novel": {
+                    "novel_restormer": {
+                        "enabled": True,
+                        "model_path": "weights/novel/super_resolution/restormer_sr.pth"
                     }
                 },
                 "device": "auto",
@@ -40,6 +52,33 @@ class Config:
                     "unet_artifact_removal": {
                         "enabled": True,
                         "model_path": "weights/foundational/artifact_removal/G_ema_ep_82.pth"
+                    }
+                },
+                "novel": {
+                    "novel_stylegan_artifact_removal": {
+                        "enabled": True,
+                        "model_path": "weights/novel/artifact_removal/stylegan_artifact_removal.pth"
+                    }
+                },
+                "device": "auto"
+            },
+            "enhancement": {
+                "novel": {
+                    "novel_swinvit": {
+                        "enabled": True,
+                        "model_path": "weights/novel/enhancement/model_swinvit.pt"
+                    },
+                    "novel_resnet50_medical": {
+                        "enabled": True,
+                        "model_path": "weights/novel/enhancement/resnet_50_23dataset.pt"
+                    },
+                    "novel_resnet50_rad": {
+                        "enabled": True,
+                        "model_path": "weights/novel/enhancement/ResNet50.pt"
+                    },
+                    "novel_vit_mae_cxr": {
+                        "enabled": True,
+                        "model_path": "weights/novel/enhancement/vit-b_CXR_0.5M_mae.pth"
                     }
                 },
                 "device": "auto"

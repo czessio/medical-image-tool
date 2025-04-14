@@ -51,6 +51,10 @@ class CleaningPipeline:
         # Initialize with default models if available
         self._initialize_models()
     
+    
+    
+    
+    
     def _initialize_models(self):
         """Initialize pipeline with default models based on configuration."""
         logger.info(f"Initializing pipeline with {'novel' if self.use_novel_models else 'foundational'} models")
@@ -61,7 +65,16 @@ class CleaningPipeline:
         # Load denoising model
         try:
             if self.use_novel_models:
-                denoising_success = self.set_denoising_model("novel_diffusion_denoiser")
+                # Try models in order of preference
+                denoising_success = self.set_vit_mae_cxr_model("novel_vit_mae_cxr", task_type='enhancement')
+                if not denoising_success:
+                    denoising_success = self.set_resnet50_rad_model("novel_resnet50_rad", task_type='enhancement')
+                if not denoising_success:
+                    denoising_success = self.set_resnet50_medical_model("novel_resnet50_medical", task_type='enhancement')
+                if not denoising_success:
+                    denoising_success = self.set_swinvit_model("novel_swinvit", task_type='enhancement')
+                if not denoising_success:
+                    denoising_success = self.set_denoising_model("novel_diffusion_denoiser")
             else:
                 denoising_success = self.set_denoising_model("dncnn_denoiser")
             
@@ -116,6 +129,11 @@ class CleaningPipeline:
             self._ensure_models_same_device()
             
         return success
+    
+    
+    
+    
+    
     
     def _ensure_models_same_device(self):
         """
@@ -213,6 +231,299 @@ class CleaningPipeline:
         self.pipeline.add_model(model_adapter, f"artifact_removal_{model_type}")
         self.current_models["artifact_removal"] = model_adapter
         return True
+    
+    
+    
+    
+    
+    def set_resnet50_rad_model(self, model_type, model_path=None, device=None, task_type='enhancement'):
+        """
+        Set the ResNet-50 RadImageNet model for the pipeline.
+        
+        Args:
+            model_type: Type of ResNet model to use (typically 'novel_resnet50_rad')
+            model_path: Path to model weights (None to use default)
+            device: Device to run inference on (None to use default)
+            task_type: Type of task for the model ('enhancement', 'classification', 'segmentation')
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info(f"Setting ResNet-50 RadImageNet model: {model_type}")
+        
+        # Remove existing RadImageNet ResNet-50 model if present
+        for task_name, model in self.current_models.items():
+            if model is not None and 'resnet50_rad' in str(model):
+                idx = self.pipeline.models.index(model)
+                self.pipeline.models.pop(idx)
+                self.pipeline.model_names.pop(idx)
+                self.current_models[task_name] = None
+                logger.info(f"Removed existing RadImageNet ResNet-50 model from {task_name}")
+        
+        # Get model path from config if not provided
+        if model_path is None:
+            model_category = "novel"  # RadImageNet ResNet-50 is only available as a novel model
+            config_path = f"models.enhancement.{model_category}.{model_type}.model_path"
+            model_path = self.config.get(config_path)
+            
+            if not model_path:
+                # Try a standard path
+                model_path = f"weights/novel/enhancement/ResNet50.pt"
+        
+        # Get device from config if not provided
+        if device is None:
+            device = self.config.get("models.enhancement.device", "auto")
+        
+        # Create and add model
+        model = ModelRegistry.create(
+            model_type, 
+            model_path=model_path, 
+            device=device,
+            task_type=task_type
+        )
+        
+        if model is None:
+            logger.error(f"Failed to create RadImageNet ResNet-50 model: {model_type}")
+            return False
+        
+        # Wrap model in adapter for safety
+        model_adapter = ModelAdapter(model, f"enhancement_{model_type}")
+        
+        # Determine which task to use it for based on task_type
+        task_name = "enhancement"
+        if task_type == 'classification':
+            task_name = "classification"
+        elif task_type == 'segmentation':
+            task_name = "segmentation"
+        
+        # Add to pipeline
+        self.pipeline.add_model(model_adapter, f"{task_name}_{model_type}")
+        self.current_models[task_name] = model_adapter
+        
+        logger.info(f"RadImageNet ResNet-50 model added to pipeline for {task_name}")
+        return True
+    
+    
+    
+    
+    def set_vit_mae_cxr_model(self, model_type, model_path=None, device=None, task_type='enhancement', encoder_only=True):
+        """
+        Set the Vision Transformer MAE model for chest X-rays in the pipeline.
+        
+        Args:
+            model_type: Type of ViT model to use (typically 'novel_vit_mae_cxr')
+            model_path: Path to model weights (None to use default)
+            device: Device to run inference on (None to use default)
+            task_type: Type of task for the model ('enhancement', 'reconstruction', 'classification')
+            encoder_only: Whether to use only the encoder part (True) or full model with decoder (False)
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info(f"Setting ViT-MAE CXR model: {model_type}")
+        
+        # Remove existing ViT-MAE model if present
+        for task_name, model in self.current_models.items():
+            if model is not None and 'vit_mae_cxr' in str(model):
+                idx = self.pipeline.models.index(model)
+                self.pipeline.models.pop(idx)
+                self.pipeline.model_names.pop(idx)
+                self.current_models[task_name] = None
+                logger.info(f"Removed existing ViT-MAE CXR model from {task_name}")
+        
+        # Get model path from config if not provided
+        if model_path is None:
+            model_category = "novel"  # ViT-MAE is only available as a novel model
+            config_path = f"models.enhancement.{model_category}.{model_type}.model_path"
+            model_path = self.config.get(config_path)
+            
+            if not model_path:
+                # Try a standard path
+                model_path = f"weights/novel/enhancement/vit-b_CXR_0.5M_mae.pth"
+        
+        # Get device from config if not provided
+        if device is None:
+            device = self.config.get("models.enhancement.device", "auto")
+        
+        # Create and add model
+        model = ModelRegistry.create(
+            model_type, 
+            model_path=model_path, 
+            device=device,
+            task_type=task_type,
+            encoder_only=encoder_only
+        )
+        
+        if model is None:
+            logger.error(f"Failed to create ViT-MAE CXR model: {model_type}")
+            return False
+        
+        # Wrap model in adapter for safety
+        model_adapter = ModelAdapter(model, f"{task_type}_{model_type}")
+        
+        # Determine which task to use it for based on task_type
+        task_name = "enhancement"
+        if task_type == 'classification':
+            task_name = "classification"
+        elif task_type == 'reconstruction':
+            task_name = "reconstruction"
+        
+        # Add to pipeline
+        self.pipeline.add_model(model_adapter, f"{task_name}_{model_type}")
+        self.current_models[task_name] = model_adapter
+        
+        logger.info(f"ViT-MAE CXR model added to pipeline for {task_name}")
+        return True
+    
+    
+    
+    
+    
+    
+    
+    def set_swinvit_model(self, model_type, model_path=None, device=None, task_type='enhancement'):
+        """
+        Set the SwinViT model for the pipeline.
+        
+        Args:
+            model_type: Type of SwinViT model to use (typically 'novel_swinvit')
+            model_path: Path to model weights (None to use default)
+            device: Device to run inference on (None to use default)
+            task_type: Type of task for the model ('reconstruction', 'segmentation', 'enhancement')
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info(f"Setting SwinViT model: {model_type}")
+        
+        # Remove existing SwinViT model if present
+        for task_name, model in self.current_models.items():
+            if model is not None and 'swinvit' in str(model):
+                idx = self.pipeline.models.index(model)
+                self.pipeline.models.pop(idx)
+                self.pipeline.model_names.pop(idx)
+                self.current_models[task_name] = None
+                logger.info(f"Removed existing SwinViT model from {task_name}")
+        
+        # Get model path from config if not provided
+        if model_path is None:
+            model_category = "novel"  # SwinViT is only available as a novel model
+            config_path = f"models.enhancement.{model_category}.{model_type}.model_path"
+            model_path = self.config.get(config_path)
+            
+            if not model_path:
+                # Try a standard path
+                model_path = f"weights/novel/enhancement/model_swinvit.pt"
+        
+        # Get device from config if not provided
+        if device is None:
+            device = self.config.get("models.enhancement.device", "auto")
+        
+        # Create and add model
+        model = ModelRegistry.create(
+            model_type, 
+            model_path=model_path, 
+            device=device,
+            task_type=task_type
+        )
+        
+        if model is None:
+            logger.error(f"Failed to create SwinViT model: {model_type}")
+            return False
+        
+        # Wrap model in adapter for safety
+        model_adapter = ModelAdapter(model, f"enhancement_{model_type}")
+        
+        # Determine which task to use it for based on task_type
+        task_name = "enhancement"
+        if task_type == 'reconstruction':
+            task_name = "super_resolution"
+        elif task_type == 'segmentation':
+            task_name = "segmentation"
+        
+        # Add to pipeline
+        self.pipeline.add_model(model_adapter, f"{task_name}_{model_type}")
+        self.current_models[task_name] = model_adapter
+        
+        logger.info(f"SwinViT model added to pipeline for {task_name}")
+        return True
+    
+    
+    
+    def set_resnet50_medical_model(self, model_type, model_path=None, device=None, task_type='enhancement'):
+        """
+        Set the ResNet-50 medical model for the pipeline.
+        
+        Args:
+            model_type: Type of ResNet model to use (typically 'novel_resnet50_medical')
+            model_path: Path to model weights (None to use default)
+            device: Device to run inference on (None to use default)
+            task_type: Type of task for the model ('enhancement', 'segmentation', 'classification')
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info(f"Setting ResNet-50 medical model: {model_type}")
+        
+        # Remove existing ResNet-50 model if present
+        for task_name, model in self.current_models.items():
+            if model is not None and 'resnet50_medical' in str(model):
+                idx = self.pipeline.models.index(model)
+                self.pipeline.models.pop(idx)
+                self.pipeline.model_names.pop(idx)
+                self.current_models[task_name] = None
+                logger.info(f"Removed existing ResNet-50 model from {task_name}")
+        
+        # Get model path from config if not provided
+        if model_path is None:
+            model_category = "novel"  # ResNet-50 is only available as a novel model
+            config_path = f"models.enhancement.{model_category}.{model_type}.model_path"
+            model_path = self.config.get(config_path)
+            
+            if not model_path:
+                # Try a standard path
+                model_path = f"weights/novel/enhancement/resnet_50_23dataset.pt"
+        
+        # Get device from config if not provided
+        if device is None:
+            device = self.config.get("models.enhancement.device", "auto")
+        
+        # Create and add model
+        model = ModelRegistry.create(
+            model_type, 
+            model_path=model_path, 
+            device=device,
+            task_type=task_type
+        )
+        
+        if model is None:
+            logger.error(f"Failed to create ResNet-50 medical model: {model_type}")
+            return False
+        
+        # Wrap model in adapter for safety
+        model_adapter = ModelAdapter(model, f"enhancement_{model_type}")
+        
+        # Determine which task to use it for based on task_type
+        task_name = "enhancement"
+        if task_type == 'classification':
+            task_name = "classification"
+        elif task_type == 'segmentation':
+            task_name = "segmentation"
+        
+        # Add to pipeline
+        self.pipeline.add_model(model_adapter, f"{task_name}_{model_type}")
+        self.current_models[task_name] = model_adapter
+        
+        logger.info(f"ResNet-50 medical model added to pipeline for {task_name}")
+        return True
+    
+    
+    
+    
+    
+    
+    
+    
     
     def set_denoising_model(self, model_type, model_path=None, device=None):
         """
