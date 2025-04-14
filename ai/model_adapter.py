@@ -28,6 +28,7 @@ class ModelAdapter:
         self.name = name
         self.enabled = True
     
+    
     def process(self, image):
         """
         Process an image with robust error handling.
@@ -63,11 +64,17 @@ class ModelAdapter:
                 logger.error(f"Model {self.name} returned non-finite values, using original image")
                 return image
                 
-            # Check dimensions
+            # Check dimensions and fix if needed
             if result.ndim != image.ndim:
-                logger.error(f"Model {self.name} returned result with wrong dimensions: expected {image.ndim}, got {result.ndim}")
-                return image
+                logger.warning(f"Model {self.name} returned result with different dimensions: expected {image.ndim}, got {result.ndim}")
                 
+                # Convert 2D grayscale to 3D if needed
+                if result.ndim == 2 and image.ndim == 3:
+                    result = np.stack([result] * image.shape[2], axis=2)
+                # Convert 3D to 2D if needed
+                elif result.ndim == 3 and image.ndim == 2:
+                    result = np.mean(result, axis=2)
+            
             # Success
             logger.debug(f"Model {self.name} processed successfully")
             return result
@@ -76,6 +83,7 @@ class ModelAdapter:
             logger.error(f"Error processing with model {self.name}: {e}")
             logger.debug(traceback.format_exc())
             return image
+    
     
     def enable(self):
         """Enable the model."""
