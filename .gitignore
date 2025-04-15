@@ -1,12 +1,7 @@
-__pycache__/
-.pytest_cache/
-*.pyc
-*.pt
-*.pth
-*.pyo
-*.pyd
-.env
-.venv
-.DS_Store
-"weights/novel/enhancement/*.pt" 
+"# Ignore large model files" 
 "*.pt" 
+"*.pth" 
+"weights/novel/enhancement/*.pt" 
+"weights/novel/enhancement/*.pth" 
+"weights/**/*.pt" 
+"weights/**/*.pth" 
