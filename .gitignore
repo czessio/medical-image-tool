@@ -5,3 +5,4 @@
 "weights/novel/enhancement/*.pth" 
 "weights/**/*.pt" 
 "weights/**/*.pth" 
+*.pt 

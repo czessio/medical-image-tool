@@ -16,7 +16,6 @@ from PyQt6.QtCore import Qt, QTimer, QSize, QByteArray
 from PyQt6.QtSvg import QSvgRenderer
 
 from utils.logging_setup import setup_logging
-from utils.model_initializer import ModelInitializer
 from utils.config import Config
 from utils.styles import apply_stylesheet, get_medical_logo
 from gui.main_window import MainWindow
@@ -164,6 +163,13 @@ def parse_arguments():
     
     return parser.parse_args()
 
+
+
+
+
+
+
+
 def initialize_models(splash=None):
     """
     Initialize models, checking and downloading if needed.
@@ -175,34 +181,51 @@ def initialize_models(splash=None):
         tuple: (success, error_message)
     """
     try:
-        # Create model initializer
-        initializer = ModelInitializer()
+        # Create model service
+        from utils.model_service import ModelService
+        model_service = ModelService()
         
         if splash:
             splash.set_progress(20, "Checking model availability...")
         
         # Initialize models
-        status = initializer.initialize_for_application(download_missing=True)
+        status = model_service.initialize()
         
         if splash:
             splash.set_progress(70, "Finalizing model initialization...")
         
         # Check if all required models are available
-        foundational_status = initializer.check_model_availability("foundational")
-        novel_status = initializer.check_model_availability("novel")
+        foundational_status = model_service.check_category_availability("foundational")
+        novel_status = model_service.check_category_availability("novel")
         
-        missing_foundational = not all(foundational_status.values())
-        missing_novel = not all(novel_status.values())
+        foundational_available = any(foundational_status.values())
+        novel_available = any(novel_status.values())
         
-        if missing_foundational and missing_novel:
-            return False, "Missing both foundational and novel models"
+        if not foundational_available and not novel_available:
+            return False, "No models are available. Please install at least one model."
+        
+        # Generate a detailed report
+        report = []
+        if not foundational_available:
+            report.append("Foundational models are not available")
+        if not novel_available:
+            report.append("Novel models are not available")
+            
+        error_message = ". ".join(report) if report else None
         
         # We can continue if at least one model category is available
-        return True, None
+        return True, error_message
         
     except Exception as e:
         logging.error(f"Error initializing models: {e}")
         return False, str(e)
+
+
+
+
+
+
+
 
 def main():
     """Main application entry point."""

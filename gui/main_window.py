@@ -25,6 +25,7 @@ from data.io.image_loader import ImageLoader
 from data.io.export import Exporter
 from ai.cleaning.inference.cleaning_pipeline import CleaningPipeline
 from utils.config import Config
+from utils.model_service import ModelService
 
 from .dialogs.preferences_dialog import PreferencesDialog
 from .viewers.image_viewer import ImageViewer
@@ -51,50 +52,32 @@ class ProcessingThread(QThread):
         """Run the processing operation."""
         try:
             # Update the pipeline with options
-            use_novel = self.options.get("use_novel_models", True)
-            if self.pipeline.use_novel_models != use_novel:
-                self.pipeline.toggle_model_type()
-            
-            # Process the image
-            self.progress.emit(10)  # Starting
-            
-            # Check if image is valid
-            if self.image is None:
-                raise ValueError("No image to process")
-                
-            if not isinstance(self.image, np.ndarray):
-                raise TypeError(f"Image must be a numpy array, got {type(self.image)}")
-                
-            if not np.isfinite(self.image).all():
-                raise ValueError("Image contains non-finite values")
-            
-            # Configure the pipeline based on options
+            # Configure pipeline with selected models
             self.pipeline.disable_all_models()
             
-            # Re-enable requested models
-            self.progress.emit(20)  # Model configuration started
+            # Set up denoising model
+            if self.options["denoising"]["enabled"]:
+                model_id = self.options["denoising"]["model_id"]
+                if model_id.startswith("novel_"):
+                    if model_id in ["novel_vit_mae_cxr", "novel_resnet50_rad", 
+                                   "novel_resnet50_medical", "novel_swinvit"]:
+                        self.pipeline._set_enhancement_model(model_id, task_type='enhancement')
+                    else:
+                        self.pipeline.set_denoising_model(model_id)
+                else:
+                    self.pipeline.set_denoising_model(model_id)
             
-            if self.options.get("denoising", {}).get("enabled", False):
-                self.pipeline.set_denoising_model(
-                    "novel_diffusion_denoiser" if use_novel else "dncnn_denoiser"
-                )
+            # Set up super-resolution model
+            if self.options["super_resolution"]["enabled"]:
+                model_id = self.options["super_resolution"]["model_id"]
+                scale_factor = self.options["super_resolution"]["scale_factor"]
+                self.pipeline.set_super_resolution_model(model_id, scale_factor=scale_factor)
             
-            self.progress.emit(30)  # Denoising model configured
+            # Set up artifact removal model
+            if self.options["artifact_removal"]["enabled"]:
+                model_id = self.options["artifact_removal"]["model_id"]
+                self.pipeline.set_artifact_removal_model(model_id)
             
-            if self.options.get("super_resolution", {}).get("enabled", False):
-                scale_factor = self.options.get("super_resolution", {}).get("scale_factor", 2)
-                self.pipeline.set_super_resolution_model(
-                    "novel_restormer" if use_novel else "edsr_super_resolution",
-                    scale_factor=scale_factor
-                )
-            
-            self.progress.emit(40)  # Super-resolution model configured
-            
-            if self.options.get("artifact_removal", {}).get("enabled", False):
-                self.pipeline.set_artifact_removal_model(
-                    "novel_stylegan_artifact_removal" if use_novel else "unet_artifact_removal"
-                )
-                
             self.progress.emit(50)  # Models configured
             
             # Process the image
@@ -165,6 +148,9 @@ class MainWindow(QMainWindow):
         
         # Create config
         self.config = Config()
+        
+        # Create model service
+        self.model_service = ModelService(self.config)
         
         # Create processing pipeline
         self.pipeline = CleaningPipeline(use_novel_models=self.config.get("models.use_novel", True))
@@ -513,16 +499,13 @@ class MainWindow(QMainWindow):
                 'timestamp': datetime.datetime.now().isoformat(),
                 'settings': {
                     'use_novel_models': self.pipeline.use_novel_models,
-                    'denoising_enabled': self.cleaning_panel.enable_denoising.isChecked(),
-                    'denoising_strength': self.cleaning_panel.denoising_strength.value(),
-                    'sr_enabled': self.cleaning_panel.enable_sr.isChecked(),
-                    'sr_scale': self.cleaning_panel.sr_scale.currentIndex(),
-                    'artifact_enabled': self.cleaning_panel.enable_artifact.isChecked(),
-                    'artifact_type': self.cleaning_panel.artifact_type.currentIndex(),
-                    'processing_quality': self.cleaning_panel.processing_quality.currentIndex(),
                     'comparison_mode': self.comparison_view.mode_combo.currentIndex()
                 }
             }
+            
+            # Get options from cleaning panel 
+            if hasattr(self.cleaning_panel, 'get_options'):
+                session['settings']['options'] = self.cleaning_panel.get_options()
             
             # Save using pickle
             with open(file_path, 'wb') as f:
@@ -600,25 +583,20 @@ class MainWindow(QMainWindow):
                 if self.pipeline.use_novel_models != use_novel:
                     self.pipeline.toggle_model_type()
                 
-                # Apply UI settings
-                if hasattr(self.cleaning_panel, 'use_novel_radio'):
-                    # New UI has radio buttons
-                    if use_novel:
-                        self.cleaning_panel.use_novel_radio.setChecked(True)
-                    else:
-                        self.cleaning_panel.use_foundational_radio.setChecked(True)
-                elif hasattr(self.cleaning_panel, 'use_novel_models'):
-                    # Old UI has checkbox
-                    self.cleaning_panel.use_novel_models.setChecked(use_novel)
-                
-                # Apply other settings
-                self.cleaning_panel.enable_denoising.setChecked(settings.get('denoising_enabled', True))
-                self.cleaning_panel.denoising_strength.setValue(settings.get('denoising_strength', 50))
-                self.cleaning_panel.enable_sr.setChecked(settings.get('sr_enabled', True))
-                self.cleaning_panel.sr_scale.setCurrentIndex(settings.get('sr_scale', 1))
-                self.cleaning_panel.enable_artifact.setChecked(settings.get('artifact_enabled', True))
-                self.cleaning_panel.artifact_type.setCurrentIndex(settings.get('artifact_type', 0))
-                self.cleaning_panel.processing_quality.setCurrentIndex(settings.get('processing_quality', 1))
+                # Apply options to cleaning panel if available
+                if 'options' in settings and hasattr(self.cleaning_panel, '_load_options'):
+                    self.cleaning_panel._load_options(settings['options'])
+                else:
+                    # Apply UI settings using older method
+                    if hasattr(self.cleaning_panel, 'use_novel_radio'):
+                        # New UI has radio buttons
+                        if use_novel:
+                            self.cleaning_panel.use_novel_radio.setChecked(True)
+                        else:
+                            self.cleaning_panel.use_foundational_radio.setChecked(True)
+                    elif hasattr(self.cleaning_panel, 'use_novel_models'):
+                        # Old UI has checkbox
+                        self.cleaning_panel.use_novel_models.setChecked(use_novel)
                 
                 # Set comparison mode
                 comp_mode_idx = settings.get('comparison_mode', 0)
@@ -740,12 +718,16 @@ class MainWindow(QMainWindow):
         if self.pipeline.toggle_model_type():
             model_type = "Novel" if self.pipeline.use_novel_models else "Foundational"
             
-            # Update radio buttons if they exist
-            if hasattr(self.cleaning_panel, 'use_novel_radio'):
+            # Update radio buttons in the cleaning panel
+            if hasattr(self.cleaning_panel, 'use_novel_radio') and hasattr(self.cleaning_panel, 'use_foundational_radio'):
                 if self.pipeline.use_novel_models:
                     self.cleaning_panel.use_novel_radio.setChecked(True)
                 else:
                     self.cleaning_panel.use_foundational_radio.setChecked(True)
+                    
+                # Refresh model lists to match the new type
+                if hasattr(self.cleaning_panel, 'refresh_model_lists'):
+                    self.cleaning_panel.refresh_model_lists()
             
             # Show notification
             self.status_bar.showMessage(f"Switched to {model_type} models")
@@ -754,18 +736,6 @@ class MainWindow(QMainWindow):
             self._update_models_label()
         else:
             QMessageBox.warning(self, "Warning", "Failed to toggle model type.")
-    
-    def process_current_image(self):
-        """Process the current image with default options."""
-        if self.original_image is None:
-            QMessageBox.warning(self, "Warning", "No image to process.")
-            return
-            
-        # Get options from the cleaning panel
-        options = self.cleaning_panel.get_options()
-        
-        # Process the image
-        self.process_image(options)
     
     def process_image(self, options):
         """Process the current image with the specified options."""
@@ -801,6 +771,18 @@ class MainWindow(QMainWindow):
         
         # Start processing
         self.processing_thread.start()
+    
+    def process_current_image(self):
+        """Process the current image with default options."""
+        if self.original_image is None:
+            QMessageBox.warning(self, "Warning", "No image to process.")
+            return
+            
+        # Get options from the cleaning panel
+        options = self.cleaning_panel.get_options()
+        
+        # Process the image
+        self.process_image(options)
     
     @pyqtSlot(np.ndarray, dict)
     def on_processing_finished(self, result, metadata):
@@ -910,6 +892,10 @@ class MainWindow(QMainWindow):
                     self.cleaning_panel.use_novel_radio.setChecked(True)
                 else:
                     self.cleaning_panel.use_foundational_radio.setChecked(True)
+                    
+                # Refresh model lists
+                if hasattr(self.cleaning_panel, 'refresh_model_lists'):
+                    self.cleaning_panel.refresh_model_lists()
     
     def show_about(self):
         """Show the about dialog."""
@@ -957,6 +943,7 @@ class MainWindow(QMainWindow):
             <li>Configure enhancement options in the left panel:
                 <ul>
                     <li>Enable/disable specific enhancement modules</li>
+                    <li>Select specific models for each enhancement type</li>
                     <li>Adjust parameters like denoising strength</li>
                     <li>Set super-resolution scale factor</li>
                 </ul>
