@@ -7,6 +7,7 @@ import numpy as np
 from pathlib import Path
 
 from .model_registry import ModelRegistry
+from utils.memory_monitor import memory_monitor  # Import the memory monitor
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +73,86 @@ class InferencePipeline:
         
         return current_image
     
+    def process_batch(self, images, batch_size=4):
+        """
+        Process a batch of images through the pipeline with specified batch size.
+        
+        Args:
+            images: List of input images as numpy arrays
+            batch_size: Maximum number of images to process at once
+            
+        Returns:
+            list: List of processed output images
+        """
+        if not self.models:
+            logger.warning("No models in pipeline, returning original images")
+            return images.copy()
+        
+        results = []
+        
+        # Process in batches
+        for i in range(0, len(images), batch_size):
+            batch = images[i:i+batch_size]
+            logger.info(f"Processing batch {i//batch_size + 1}/{(len(images) + batch_size - 1)//batch_size}, size: {len(batch)}")
+            
+            # Process the batch through each model in sequence
+            current_batch = [img.copy() for img in batch]
+            
+            for model_idx, (model, name) in enumerate(zip(self.models, self.model_names)):
+                logger.debug(f"Running {name} ({model_idx+1}/{len(self.models)}) on batch")
+                try:
+                    # Start memory monitoring for this model
+                    memory_monitor.start_monitoring()
+                    
+                    # If the model supports batched processing, use it
+                    if hasattr(model, 'process_batch'):
+                        current_batch = model.process_batch(current_batch)
+                    else:
+                        # Otherwise, process images individually
+                        current_batch = [model.process(img) for img in current_batch]
+                    
+                    # Stop memory monitoring
+                    memory_monitor.stop_monitoring()
+                    
+                except Exception as e:
+                    logger.error(f"Error in model {name} during batch processing: {e}")
+                    # Continue with the current batch if a model fails
+                    
+                    # Stop memory monitoring on error
+                    memory_monitor.stop_monitoring()
+            
+            # Add processed batch to results
+            results.extend(current_batch)
+            
+            # Collect garbage after processing a batch
+            memory_monitor.collect_garbage()
+        
+        return results
+    
     def clear(self):
         """Clear all models from the pipeline."""
         self.models = []
         self.model_names = []
         logger.debug("Pipeline cleared")
+    
+    def estimate_optimal_batch_size(self, sample_image):
+        """
+        Estimate the optimal batch size based on available memory and sample image.
+        
+        Args:
+            sample_image: A sample image to use for estimation
+            
+        Returns:
+            int: Estimated optimal batch size
+        """
+        # Use memory monitor to estimate batch size
+        batch_size = memory_monitor.estimate_batch_size(sample_image, target_memory_usage=0.7)
+        
+        # Ensure batch size is at least 1
+        batch_size = max(1, batch_size)
+        
+        logger.info(f"Estimated optimal batch size: {batch_size}")
+        return batch_size
     
     def __call__(self, image):
         """

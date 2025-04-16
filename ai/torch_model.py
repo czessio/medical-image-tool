@@ -21,24 +21,26 @@ logger = logging.getLogger(__name__)
 class TorchModel(BaseModel):
     """Base class for PyTorch models."""
     
-    def __init__(self, model_path=None, device=None):
+    def __init__(self, model_path=None, device=None, quantize=False, quantization_type="dynamic", quantization_dtype="int8"):
         """
         Initialize the PyTorch model.
         
         Args:
             model_path: Path to model weights file
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
+            quantize: Whether to quantize the model for faster inference
+            quantization_type: Type of quantization ('dynamic', 'static', or 'qat')
+            quantization_dtype: Data type for quantization ('int8' or 'fp16')
         """
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch is required but not installed")
         
+        self.quantize = quantize
+        self.quantization_type = quantization_type
+        self.quantization_dtype = quantization_dtype
+        
         super().__init__(model_path, device)
         self.torch_device = None
-    
-    
-    
-    
-    
     
     def _load_model(self):
         """
@@ -96,11 +98,54 @@ class TorchModel(BaseModel):
             except Exception as e:
                 logger.error(f"Error loading model weights: {e}")
                 logger.warning("Using model with random weights")
+        
+        # Apply quantization if requested
+        if self.quantize:
+            self._apply_quantization()
     
+    def _apply_quantization(self):
+        """Apply quantization to the model for faster inference."""
+        try:
+            from .model_quantization import ModelQuantizer
+            
+            logger.info(f"Applying {self.quantization_type} quantization with {self.quantization_dtype}")
+            original_size = self._get_model_size_mb()
+            
+            # Quantize the model
+            self.model = ModelQuantizer.quantize_model(
+                self.model, 
+                quantization_type=self.quantization_type,
+                dtype=self.quantization_dtype
+            )
+            
+            # Move model to correct device
+            self.model = self.model.to(self.torch_device)
+            
+            # Log success and size reduction
+            new_size = self._get_model_size_mb()
+            reduction = (1 - new_size/original_size) * 100 if original_size > 0 else 0
+            logger.info(f"Model quantized successfully. Size reduced from {original_size:.2f}MB to {new_size:.2f}MB ({reduction:.1f}% reduction)")
+            
+        except ImportError:
+            logger.error("Model quantization is not available")
+        except Exception as e:
+            logger.error(f"Error applying quantization: {e}")
     
-    
-    
-    
+    def _get_model_size_mb(self):
+        """Get the model size in MB."""
+        if not hasattr(self, 'model') or self.model is None:
+            return 0
+            
+        param_size = 0
+        for param in self.model.parameters():
+            param_size += param.nelement() * param.element_size()
+        
+        buffer_size = 0
+        for buffer in self.model.buffers():
+            buffer_size += buffer.nelement() * buffer.element_size()
+        
+        size_mb = (param_size + buffer_size) / (1024 ** 2)
+        return size_mb
     
     def _create_model_architecture(self):
         """
@@ -194,3 +239,57 @@ class TorchModel(BaseModel):
         output = np.clip(output, 0, 1)
         
         return output
+        
+    def process_batch(self, images, batch_size=None):
+        """
+        Process a batch of images.
+        
+        Args:
+            images: List of input images as numpy arrays
+            batch_size: Maximum number of images to process at once (None for all)
+            
+        Returns:
+            list: List of processed output images
+        """
+        if not self.initialized:
+            self.initialize()
+        
+        # Use all images as a single batch if batch_size is None
+        if batch_size is None:
+            batch_size = len(images)
+        
+        results = []
+        
+        # Process in smaller batches if needed
+        for i in range(0, len(images), batch_size):
+            batch = images[i:i+batch_size]
+            logger.debug(f"Processing batch of {len(batch)} images")
+            
+            try:
+                # Preprocess all images in the batch
+                tensors = [self.preprocess(img) for img in batch]
+                
+                # Stack tensors into a single batch tensor
+                batch_tensor = torch.cat(tensors, dim=0)
+                
+                # Run inference
+                with torch.no_grad():
+                    batch_output = self.model(batch_tensor)
+                
+                # Postprocess each output image
+                for j, output in enumerate(batch_output):
+                    # Add a dimension to match the shape expected by postprocess
+                    output = output.unsqueeze(0)
+                    
+                    # Post-process and append to results
+                    result = self.postprocess(output, batch[j])
+                    results.append(result)
+                    
+            except Exception as e:
+                logger.error(f"Error processing batch: {e}")
+                # Fall back to individual processing
+                logger.warning("Falling back to individual image processing")
+                for img in batch:
+                    results.append(self.process(img))
+        
+        return results

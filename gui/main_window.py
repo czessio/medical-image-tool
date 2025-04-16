@@ -218,7 +218,7 @@ class MainWindow(QMainWindow):
         # Create cleaning panel
         self.cleaning_panel = CleaningPanel()
         self.cleaning_panel.cleaningRequested.connect(self.process_image)
-        self.cleaning_panel.roiCleaningRequested.connect(self.process_roi)
+        self.cleaning_panel.cleaningRequested.connect(self.process_roi)
         self.cleaning_panel.clearRoiRequested.connect(self.clear_roi)
         
         # Add shadow effect to cleaning panel
