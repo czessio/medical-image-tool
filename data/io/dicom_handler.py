@@ -1,239 +1,258 @@
 """
-DICOM file handling for the medical image enhancement application.
-Provides functionality to load, process, and save DICOM images.
+Enhancements to the DICOM handler to extract more metadata and improve display.
+These updates extract and format DICOM metadata for better visualization.
 """
-import os
-import logging
-from pathlib import Path
-import numpy as np
 
-try:
-    import pydicom
-    PYDICOM_AVAILABLE = True
-    print(f"DEBUG: pydicom successfully imported: {pydicom.__version__}")
-except ImportError as e:
-    PYDICOM_AVAILABLE = False
-    print(f"DEBUG: pydicom import failed: {e}")
-
-# Define our own apply_window function since it might not be available in pydicom
-def apply_window(pixel_array, window_center, window_width, y_min=0, y_max=255):
-    """Apply window center and width to the given pixel array."""
-    if not isinstance(window_center, (int, float)):
-        window_center = float(window_center)
-    if not isinstance(window_width, (int, float)):
-        window_width = float(window_width)
-        
-    window_min = window_center - window_width / 2.0
-    window_max = window_center + window_width / 2.0
-    
-    output = np.clip(pixel_array, window_min, window_max)
-    output = ((output - window_min) / (window_max - window_min)) * (y_max - y_min) + y_min
-    
-    return output
-
-logger = logging.getLogger(__name__)
+# Assuming there's an existing dicom_handler.py file, here's what we'll enhance
 
 class DicomHandler:
-    """Handles loading, processing and saving of DICOM files."""
+    """Handler for DICOM image files with enhanced metadata extraction."""
     
     @staticmethod
-    def is_available():
-        """Check if DICOM handling is available (pydicom installed)."""
-        return PYDICOM_AVAILABLE
-    
-    @staticmethod
-    def check_availability():
-        """Verify DICOM handling availability and raise error if not available."""
-        if not PYDICOM_AVAILABLE:
-            raise ImportError("pydicom is required for DICOM handling but is not installed.")
-    
-    @staticmethod
-    def load_dicom(path):
+    def load_dicom(file_path):
         """
-        Load a DICOM file and convert it to a normalized numpy array.
+        Load a DICOM image file and extract enhanced metadata.
         
         Args:
-            path: Path to DICOM file
+            file_path: Path to the DICOM file
             
         Returns:
             tuple: (image_data, metadata)
-                - image_data: Numpy array containing the pixel data
-                - metadata: Dictionary containing relevant DICOM metadata
         """
-        DicomHandler.check_availability()
-        
-        logger.info(f"Loading DICOM file: {path}")
+        # Import pydicom conditionally to handle installations without it
         try:
-            # Load the DICOM file
-            dicom_data = pydicom.dcmread(path)
-            
-            # Extract pixel data as numpy array
-            image_data = dicom_data.pixel_array
-            
-            # Convert to float32 for processing
-            image_data = image_data.astype(np.float32)
-            
-            # Apply rescaling if available
-            if hasattr(dicom_data, 'RescaleSlope') and hasattr(dicom_data, 'RescaleIntercept'):
-                image_data = image_data * dicom_data.RescaleSlope + dicom_data.RescaleIntercept
-            
-            # Extract relevant metadata
-            metadata = DicomHandler.extract_metadata(dicom_data)
-            
-            logger.info(f"DICOM loaded successfully: {image_data.shape}, {image_data.dtype}")
-            return image_data, metadata
-            
-        except Exception as e:
-            logger.error(f"Error loading DICOM file: {e}")
-            raise
-    
-    @staticmethod
-    def apply_window_level(image_data, metadata, window=None, level=None):
-        """
-        Apply windowing (contrast adjustment) to the DICOM image.
+            import pydicom
+        except ImportError:
+            raise ImportError("pydicom is required to load DICOM files")
         
-        Args:
-            image_data: The image data array
-            metadata: DICOM metadata containing window/level information
-            window: Window width (if None, use value from metadata if available)
-            level: Window center (if None, use value from metadata if available)
-            
-        Returns:
-            numpy.ndarray: Windowed image data
-        """
-        DicomHandler.check_availability()
+        # Load the DICOM file
+        dicom_data = pydicom.dcmread(file_path)
         
-        # Use provided window/level or get from metadata
-        if window is None and 'WindowWidth' in metadata:
-            window = metadata['WindowWidth']
-        if level is None and 'WindowCenter' in metadata:
-            level = metadata['WindowCenter']
-            
-        # If still None, use image min/max
-        if window is None or level is None:
-            min_val = np.min(image_data)
-            max_val = np.max(image_data)
-            if window is None:
-                window = max_val - min_val
-            if level is None:
-                level = min_val + window / 2
+        # Extract the image data
+        image_data = dicom_data.pixel_array
         
-        logger.debug(f"Applying window/level: {window}/{level}")
+        # Apply scaling if available
+        if hasattr(dicom_data, 'RescaleSlope') and hasattr(dicom_data, 'RescaleIntercept'):
+            image_data = image_data * float(dicom_data.RescaleSlope) + float(dicom_data.RescaleIntercept)
         
-        # Apply windowing using our function
-        windowed_image = apply_window(image_data, level, window, 0, 1)
+        # Extract and format metadata
+        metadata = DicomHandler.extract_metadata(dicom_data)
         
-        return windowed_image
-    
-    @staticmethod
-    def save_dicom(image_data, metadata, output_path, original_dicom=None):
-        """
-        Save processed image data as a DICOM file.
+        # Store original path for reference
+        metadata['original_path'] = file_path
         
-        Args:
-            image_data: Processed image data as numpy array
-            metadata: Dictionary of DICOM metadata
-            output_path: Path to save the new DICOM file
-            original_dicom: Optional original DICOM object to use as template
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        DicomHandler.check_availability()
-        
-        try:
-            if original_dicom is None and 'original_dicom_path' in metadata:
-                # Load the original DICOM as template
-                original_dicom = pydicom.dcmread(metadata['original_dicom_path'])
-            
-            if original_dicom:
-                # Use original as template
-                ds = original_dicom
-            else:
-                # Create a new DICOM dataset
-                ds = pydicom.Dataset()
-                ds.file_meta = pydicom.Dataset()
-                ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
-                
-                # Set minimal required DICOM attributes
-                ds.SOPClassUID = pydicom.uid.CT_Image_Storage
-                ds.SOPInstanceUID = pydicom.uid.generate_uid()
-                ds.StudyInstanceUID = pydicom.uid.generate_uid()
-                ds.SeriesInstanceUID = pydicom.uid.generate_uid()
-                
-                # Add metadata from the provided dictionary
-                for key, value in metadata.items():
-                    if key not in ['original_dicom_path']:  # Skip non-DICOM metadata
-                        try:
-                            setattr(ds, key, value)
-                        except:
-                            logger.warning(f"Could not set DICOM attribute: {key}")
-            
-            # Ensure the image data is in the correct format
-            # Convert from float to appropriate integer type
-            if np.issubdtype(image_data.dtype, np.floating):
-                # Scale to appropriate bit depth
-                bit_depth = 16  # Default to 16-bit
-                if 'BitsStored' in metadata:
-                    bit_depth = metadata['BitsStored']
-                
-                max_val = 2**bit_depth - 1
-                image_data = np.clip(image_data * max_val, 0, max_val).astype(np.uint16)
-            
-            # Update the pixel data
-            ds.PixelData = image_data.tobytes()
-            ds.Rows, ds.Columns = image_data.shape[:2]
-            
-            # Add processing information
-            ds.ProcessingDescription = "Enhanced with Medical Image Enhancement Tool"
-            
-            # Save the file
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            ds.save_as(output_path)
-            
-            logger.info(f"DICOM saved successfully to {output_path}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error saving DICOM file: {e}")
-            return False
+        return image_data, metadata
     
     @staticmethod
     def extract_metadata(dicom_data):
         """
-        Extract relevant metadata from a DICOM dataset.
+        Extract formatted metadata from a DICOM dataset.
         
         Args:
-            dicom_data: pydicom.dataset.FileDataset object
+            dicom_data: pydicom Dataset object
             
         Returns:
-            dict: Dictionary of relevant DICOM metadata
+            dict: Formatted metadata dictionary
         """
-        metadata = {
-            'original_dicom_path': getattr(dicom_data, 'filename', None),
-            'PatientID': getattr(dicom_data, 'PatientID', ''),
-            'PatientName': str(getattr(dicom_data, 'PatientName', '')),
-            'StudyDescription': getattr(dicom_data, 'StudyDescription', ''),
-            'SeriesDescription': getattr(dicom_data, 'SeriesDescription', ''),
-            'Modality': getattr(dicom_data, 'Modality', ''),
-            'PixelSpacing': getattr(dicom_data, 'PixelSpacing', [1.0, 1.0]),
-        }
+        metadata = {}
         
-        # Add window/level if available
-        if hasattr(dicom_data, 'WindowWidth'):
-            if isinstance(dicom_data.WindowWidth, list):
-                metadata['WindowWidth'] = dicom_data.WindowWidth[0]
-            else:
-                metadata['WindowWidth'] = dicom_data.WindowWidth
-                
-        if hasattr(dicom_data, 'WindowCenter'):
-            if isinstance(dicom_data.WindowCenter, list):
-                metadata['WindowCenter'] = dicom_data.WindowCenter[0]
-            else:
-                metadata['WindowCenter'] = dicom_data.WindowCenter
+        # Helper function to safely get attributes
+        def safe_get(dataset, attr, default=""):
+            if hasattr(dataset, attr):
+                value = getattr(dataset, attr)
+                # Handle special cases
+                if value == "":
+                    return default
+                return value
+            return default
         
-        # Add bit depth information
-        if hasattr(dicom_data, 'BitsStored'):
-            metadata['BitsStored'] = dicom_data.BitsStored
+        # Extract key metadata fields
+        # Patient information
+        metadata['PatientName'] = str(safe_get(dicom_data, 'PatientName'))
+        metadata['PatientID'] = safe_get(dicom_data, 'PatientID')
+        metadata['PatientBirthDate'] = DicomHandler.format_date(safe_get(dicom_data, 'PatientBirthDate'))
+        metadata['PatientSex'] = safe_get(dicom_data, 'PatientSex')
+        metadata['PatientAge'] = safe_get(dicom_data, 'PatientAge')
+        metadata['PatientWeight'] = safe_get(dicom_data, 'PatientWeight')
+        metadata['PatientSize'] = safe_get(dicom_data, 'PatientSize')
+        
+        # Study information
+        metadata['StudyDate'] = DicomHandler.format_date(safe_get(dicom_data, 'StudyDate'))
+        metadata['StudyTime'] = DicomHandler.format_time(safe_get(dicom_data, 'StudyTime'))
+        metadata['StudyDescription'] = safe_get(dicom_data, 'StudyDescription')
+        metadata['StudyInstanceUID'] = safe_get(dicom_data, 'StudyInstanceUID')
+        metadata['AccessionNumber'] = safe_get(dicom_data, 'AccessionNumber')
+        metadata['ReferringPhysicianName'] = str(safe_get(dicom_data, 'ReferringPhysicianName'))
+        metadata['StudyID'] = safe_get(dicom_data, 'StudyID')
+        
+        # Series information
+        metadata['SeriesDate'] = DicomHandler.format_date(safe_get(dicom_data, 'SeriesDate'))
+        metadata['SeriesTime'] = DicomHandler.format_time(safe_get(dicom_data, 'SeriesTime'))
+        metadata['SeriesDescription'] = safe_get(dicom_data, 'SeriesDescription')
+        metadata['SeriesNumber'] = safe_get(dicom_data, 'SeriesNumber')
+        metadata['Modality'] = safe_get(dicom_data, 'Modality')
+        metadata['BodyPartExamined'] = safe_get(dicom_data, 'BodyPartExamined')
+        metadata['SeriesInstanceUID'] = safe_get(dicom_data, 'SeriesInstanceUID')
+        
+        # Image information
+        metadata['InstanceNumber'] = safe_get(dicom_data, 'InstanceNumber')
+        metadata['ImagePosition'] = str(safe_get(dicom_data, 'ImagePositionPatient', ''))
+        metadata['ImageOrientation'] = str(safe_get(dicom_data, 'ImageOrientationPatient', ''))
+        metadata['PixelSpacing'] = str(safe_get(dicom_data, 'PixelSpacing', ''))
+        metadata['SliceThickness'] = safe_get(dicom_data, 'SliceThickness', '')
+        metadata['SliceLocation'] = safe_get(dicom_data, 'SliceLocation', '')
+        
+        # Window settings
+        metadata['WindowCenter'] = safe_get(dicom_data, 'WindowCenter', '')
+        metadata['WindowWidth'] = safe_get(dicom_data, 'WindowWidth', '')
+        
+        # Rescale settings
+        metadata['RescaleIntercept'] = safe_get(dicom_data, 'RescaleIntercept', '')
+        metadata['RescaleSlope'] = safe_get(dicom_data, 'RescaleSlope', '')
+        
+        # Pixel data properties
+        metadata['SamplesPerPixel'] = safe_get(dicom_data, 'SamplesPerPixel', '')
+        metadata['PhotometricInterpretation'] = safe_get(dicom_data, 'PhotometricInterpretation', '')
+        metadata['Rows'] = safe_get(dicom_data, 'Rows', '')
+        metadata['Columns'] = safe_get(dicom_data, 'Columns', '')
+        metadata['BitsAllocated'] = safe_get(dicom_data, 'BitsAllocated', '')
+        metadata['BitsStored'] = safe_get(dicom_data, 'BitsStored', '')
+        metadata['HighBit'] = safe_get(dicom_data, 'HighBit', '')
+        metadata['PixelRepresentation'] = safe_get(dicom_data, 'PixelRepresentation', '')
+        
+        # Equipment information
+        metadata['Manufacturer'] = safe_get(dicom_data, 'Manufacturer', '')
+        metadata['ManufacturerModelName'] = safe_get(dicom_data, 'ManufacturerModelName', '')
+        metadata['SoftwareVersions'] = safe_get(dicom_data, 'SoftwareVersions', '')
+        metadata['StationName'] = safe_get(dicom_data, 'StationName', '')
+        metadata['DeviceSerialNumber'] = safe_get(dicom_data, 'DeviceSerialNumber', '')
+        metadata['InstitutionName'] = safe_get(dicom_data, 'InstitutionName', '')
+        
+        # Include all other attributes for completeness
+        for elem in dicom_data:
+            if elem.keyword and elem.keyword not in metadata:
+                try:
+                    # Skip pixel data (too large)
+                    if elem.keyword == 'PixelData':
+                        continue
+                    
+                    # Try to extract value
+                    if elem.value != "":
+                        metadata[elem.keyword] = str(elem.value)
+                except Exception as e:
+                    # Skip elements that can't be converted to string
+                    pass
         
         return metadata
+    
+    @staticmethod
+    def format_date(date_str):
+        """
+        Format DICOM date string (YYYYMMDD) to readable format (YYYY-MM-DD).
+        
+        Args:
+            date_str: DICOM date string
+            
+        Returns:
+            str: Formatted date string
+        """
+        if not date_str or len(date_str) != 8:
+            return date_str
+        
+        try:
+            year = date_str[:4]
+            month = date_str[4:6]
+            day = date_str[6:8]
+            return f"{year}-{month}-{day}"
+        except:
+            return date_str
+    
+    @staticmethod
+    def format_time(time_str):
+        """
+        Format DICOM time string (HHMMSS.FFFFFF) to readable format (HH:MM:SS).
+        
+        Args:
+            time_str: DICOM time string
+            
+        Returns:
+            str: Formatted time string
+        """
+        if not time_str:
+            return time_str
+        
+        try:
+            # Handle time strings with fractional seconds
+            if '.' in time_str:
+                time_str = time_str.split('.')[0]
+            
+            # Handle various lengths
+            if len(time_str) < 6:
+                time_str = time_str.ljust(6, '0')
+            
+            hour = time_str[:2]
+            minute = time_str[2:4]
+            second = time_str[4:6]
+            return f"{hour}:{minute}:{second}"
+        except:
+            return time_str
+    
+    @staticmethod
+    def apply_window_level(image, metadata, window=None, level=None):
+        """
+        Apply window/level (contrast/brightness) to the image.
+        
+        Args:
+            image: Image array
+            metadata: Image metadata
+            window: Window width (contrast), if None use metadata
+            level: Window center (brightness), if None use metadata
+            
+        Returns:
+            numpy.ndarray: Windowed image
+        """
+        import numpy as np
+        
+        # Get window/level from metadata if not provided
+        if window is None:
+            window = metadata.get('WindowWidth', None)
+            if window is not None:
+                try:
+                    # Handle multiple window values
+                    if isinstance(window, list) or isinstance(window, tuple):
+                        window = float(window[0])
+                    else:
+                        window = float(window)
+                except:
+                    window = None
+        
+        if level is None:
+            level = metadata.get('WindowCenter', None)
+            if level is not None:
+                try:
+                    # Handle multiple level values
+                    if isinstance(level, list) or isinstance(level, tuple):
+                        level = float(level[0])
+                    else:
+                        level = float(level)
+                except:
+                    level = None
+        
+        # If window/level not available, return original image
+        if window is None or level is None:
+            return image
+        
+        # Apply window/level
+        low = level - window/2
+        high = level + window/2
+        
+        # Clip image to window range
+        windowed_image = np.clip(image, low, high)
+        
+        # Normalize to [0, 1]
+        if high != low:
+            windowed_image = (windowed_image - low) / (high - low)
+        else:
+            windowed_image = np.zeros_like(image)
+        
+        return windowed_image

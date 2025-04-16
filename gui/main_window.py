@@ -31,6 +31,7 @@ from .dialogs.preferences_dialog import PreferencesDialog
 from .viewers.image_viewer import ImageViewer
 from .viewers.comparison_view import ComparisonView
 from .panels.cleaning_panel import CleaningPanel
+from .viewers.dicom_metadata_viewer import DicomMetadataViewer
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +218,8 @@ class MainWindow(QMainWindow):
         # Create cleaning panel
         self.cleaning_panel = CleaningPanel()
         self.cleaning_panel.cleaningRequested.connect(self.process_image)
+        self.cleaning_panel.roiCleaningRequested.connect(self.process_roi)
+        self.cleaning_panel.clearRoiRequested.connect(self.clear_roi)
         
         # Add shadow effect to cleaning panel
         shadow = QGraphicsDropShadowEffect()
@@ -230,6 +233,10 @@ class MainWindow(QMainWindow):
         
         # Create comparison view
         self.comparison_view = ComparisonView()
+        
+        # Connect ROI selection signals
+        self.comparison_view.original_viewer.roi_selected.connect(self.on_roi_selected)
+        self.comparison_view.enhanced_viewer.roi_selected.connect(self.on_roi_selected)
         
         # Add drop shadow to comparison view
         shadow2 = QGraphicsDropShadowEffect()
@@ -281,6 +288,25 @@ class MainWindow(QMainWindow):
         self.toolbar.setIconSize(QSize(24, 24))
         self.toolbar.setMovable(False)
         self.addToolBar(self.toolbar)
+        
+        # Create metadata dock widget
+        self.metadata_dock = QDockWidget("DICOM Metadata", self)
+        self.metadata_dock.setAllowedAreas(
+            Qt.DockWidgetArea.RightDockWidgetArea | 
+            Qt.DockWidgetArea.LeftDockWidgetArea
+        )
+        self.metadata_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetClosable | 
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+        )
+
+        # Create and add the metadata viewer
+        self.metadata_viewer = DicomMetadataViewer()
+        self.metadata_dock.setWidget(self.metadata_viewer)
+
+        # Add dock widget to main window - initially hidden
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.metadata_dock)
+        self.metadata_dock.hide()
         
         # Add actions
         self.create_actions()
@@ -342,6 +368,12 @@ class MainWindow(QMainWindow):
         self.toggle_model_action.setShortcut(QKeySequence("Ctrl+T"))
         self.toggle_model_action.triggered.connect(self.toggle_model_type)
         
+        # View actions
+        self.view_metadata_action = QAction("View DICOM Metadata", self)
+        self.view_metadata_action.setCheckable(True)
+        self.view_metadata_action.triggered.connect(self._toggle_metadata_viewer)
+        self.view_metadata_action.setEnabled(False)  # Initially disabled
+        
         # Help actions
         self.about_action = QAction("About", self)
         self.about_action.triggered.connect(self.show_about)
@@ -374,11 +406,22 @@ class MainWindow(QMainWindow):
         self.process_menu.addAction(self.process_action)
         self.process_menu.addAction(self.toggle_model_action)
         
+        # View menu
+        self.view_menu = self.menuBar().addMenu("&View")
+        self.view_menu.addAction(self.view_metadata_action)
+        
         # Help menu
         self.help_menu = self.menuBar().addMenu("&Help")
         self.help_menu.addAction(self.help_action)
         self.help_menu.addSeparator()
         self.help_menu.addAction(self.about_action)
+    
+    def _toggle_metadata_viewer(self, checked):
+        """Toggle visibility of the DICOM metadata viewer."""
+        if checked:
+            self.metadata_dock.show()
+        else:
+            self.metadata_dock.hide()
     
     def load_settings(self):
         """Load application settings."""
@@ -470,9 +513,202 @@ class MainWindow(QMainWindow):
             # Update last directory
             self.last_directory = str(Path(file_path).parent)
             
+            # Check if the image has DICOM metadata
+            if is_medical:
+                # Enable metadata viewer
+                self.view_metadata_action.setEnabled(True)
+                
+                # Update metadata viewer
+                self.metadata_viewer.set_metadata(metadata)
+                
+                # Show metadata viewer if it was previously visible
+                if self.view_metadata_action.isChecked():
+                    self.metadata_dock.show()
+            else:
+                # Disable metadata viewer for non-DICOM images
+                self.view_metadata_action.setEnabled(False)
+                self.metadata_dock.hide()
+                self.view_metadata_action.setChecked(False)
+            
         except Exception as e:
             logger.error(f"Error loading image: {e}")
-            QMessageBox.critical(self, "Error", f"Error loading image:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Error saving image:\n{str(e)}")
+    
+    def export_comparison(self):
+        """Export the current comparison view."""
+        if self.original_image is None or self.enhanced_image is None:
+            QMessageBox.warning(self, "Warning", "No comparison to export.")
+            return
+            
+        # Show file dialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Comparison", self.last_directory, 
+            "PNG Files (*.png);;JPEG Files (*.jpg *.jpeg);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+            
+        # Export the comparison
+        try:
+            result = self.comparison_view.export_comparison(file_path, include_histograms=True)
+            
+            if result:
+                self.status_bar.showMessage(f"Exported comparison to {file_path}")
+            else:
+                QMessageBox.warning(self, "Warning", "Failed to export comparison.")
+                
+        except Exception as e:
+            logger.error(f"Error exporting comparison: {e}")
+            QMessageBox.critical(self, "Error", f"Error exporting comparison:\n{str(e)}")
+    
+    def toggle_model_type(self):
+        """Toggle between foundational and novel models."""
+        if self.pipeline.toggle_model_type():
+            model_type = "Novel" if self.pipeline.use_novel_models else "Foundational"
+            
+            # Update radio buttons in the cleaning panel
+            if hasattr(self.cleaning_panel, 'use_novel_radio') and hasattr(self.cleaning_panel, 'use_foundational_radio'):
+                if self.pipeline.use_novel_models:
+                    self.cleaning_panel.use_novel_radio.setChecked(True)
+                else:
+                    self.cleaning_panel.use_foundational_radio.setChecked(True)
+                    
+                # Refresh model lists to match the new type
+                if hasattr(self.cleaning_panel, 'refresh_model_lists'):
+                    self.cleaning_panel.refresh_model_lists()
+            
+            # Show notification
+            self.status_bar.showMessage(f"Switched to {model_type} models")
+            
+            # Update models label
+            self._update_models_label()
+        else:
+            QMessageBox.warning(self, "Warning", "Failed to toggle model type.")
+    
+    def process_image(self, options):
+        """Process the current image with the specified options."""
+        if self.original_image is None:
+            QMessageBox.warning(self, "Warning", "No image to process.")
+            return
+            
+        # Check if a processing thread is already running
+        if self.processing_thread is not None and self.processing_thread.isRunning():
+            QMessageBox.warning(self, "Warning", "Processing already in progress.")
+            return
+            
+        # Show processing indicator
+        self.progress_container.show()
+        self.progress_bar.setValue(0)
+        self.status_bar.showMessage("Processing image...")
+        
+        # Disable process button during processing
+        self.process_action.setEnabled(False)
+        
+        # Create and start processing thread
+        self.processing_thread = ProcessingThread(
+            self.pipeline, 
+            self.original_image, 
+            self.original_metadata, 
+            options
+        )
+        
+        # Connect signals
+        self.processing_thread.finished.connect(self.on_processing_finished)
+        self.processing_thread.progress.connect(self.on_processing_progress)
+        self.processing_thread.error.connect(self.on_processing_error)
+        
+        # Start processing
+        self.processing_thread.start()
+    
+    def process_current_image(self):
+        """Process the current image with default options."""
+        if self.original_image is None:
+            QMessageBox.warning(self, "Warning", "No image to process.")
+            return
+            
+        # Get options from the cleaning panel
+        options = self.cleaning_panel.get_options()
+        
+        # Process the image
+        self.process_image(options)
+    
+    @pyqtSlot(np.ndarray, dict)
+    def on_processing_finished(self, result, metadata):
+        """Handle processing thread completion."""
+        # Store enhanced image
+        self.enhanced_image = result
+        self.enhanced_metadata = metadata
+        
+        # Update comparison view
+        self.comparison_view.set_images(
+            self.original_image, self.enhanced_image,
+            self.original_metadata, self.enhanced_metadata
+        )
+        
+        # Hide progress indicator
+        self.progress_container.hide()
+        self.status_bar.showMessage("Processing complete")
+        
+        # Enable save actions
+        self.save_action.setEnabled(True)
+        self.save_as_action.setEnabled(True)
+        self.export_comparison_action.setEnabled(True)
+        
+        # Re-enable process button
+        self.process_action.setEnabled(True)
+        
+        # Clean up thread
+        self.processing_thread = None
+        
+        # Update models label
+        self._update_models_label()
+    
+    @pyqtSlot(int)
+    def on_processing_progress(self, progress):
+        """Handle processing progress updates."""
+        # Update progress bar
+        self.progress_bar.setValue(progress)
+    
+    @pyqtSlot(str)
+    def on_processing_error(self, error_message):
+        """Handle processing thread errors."""
+        # Hide progress indicator
+        self.progress_container.hide()
+        
+        # Show detailed error message
+        error_box = QMessageBox(self)
+        error_box.setWindowTitle("Processing Error")
+        error_box.setIcon(QMessageBox.Icon.Warning)
+        
+        error_text = f"""
+        <h3>An error occurred during image processing</h3>
+        <p>{error_message}</p>
+        <p>The application will continue running, but the processed image may not show all expected enhancements.</p>
+        <p>Possible solutions:</p>
+        <ul>
+            <li>Try using a different image</li>
+            <li>Disable some enhancement modules</li>
+            <li>Switch to {'foundational' if self.pipeline.use_novel_models else 'novel'} models</li>
+            <li>Check if the AI models are installed correctly</li>
+        </ul>
+        """
+        
+        error_box.setText(error_text)
+        error_box.setTextFormat(Qt.TextFormat.RichText)
+        error_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        error_box.exec()
+        
+        # Update status bar
+        self.status_bar.showMessage("Processing failed: " + error_message.split('\n')[0])
+        
+        # Re-enable process button
+        self.process_action.setEnabled(True)
+        
+        # Clean up thread
+        self.processing_thread = None
+
+
     
     def save_session(self):
         """Save the current session (images and settings)."""
@@ -683,294 +919,4 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             logger.error(f"Error saving enhanced image: {e}")
-            QMessageBox.critical(self, "Error", f"Error saving image:\n{str(e)}")
-    
-    def export_comparison(self):
-        """Export the current comparison view."""
-        if self.original_image is None or self.enhanced_image is None:
-            QMessageBox.warning(self, "Warning", "No comparison to export.")
-            return
-            
-        # Show file dialog
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Comparison", self.last_directory, 
-            "PNG Files (*.png);;JPEG Files (*.jpg *.jpeg);;All Files (*)"
-        )
-        
-        if not file_path:
-            return
-            
-        # Export the comparison
-        try:
-            result = self.comparison_view.export_comparison(file_path)
-            
-            if result:
-                self.status_bar.showMessage(f"Exported comparison to {file_path}")
-            else:
-                QMessageBox.warning(self, "Warning", "Failed to export comparison.")
-                
-        except Exception as e:
-            logger.error(f"Error exporting comparison: {e}")
-            QMessageBox.critical(self, "Error", f"Error exporting comparison:\n{str(e)}")
-    
-    def toggle_model_type(self):
-        """Toggle between foundational and novel models."""
-        if self.pipeline.toggle_model_type():
-            model_type = "Novel" if self.pipeline.use_novel_models else "Foundational"
-            
-            # Update radio buttons in the cleaning panel
-            if hasattr(self.cleaning_panel, 'use_novel_radio') and hasattr(self.cleaning_panel, 'use_foundational_radio'):
-                if self.pipeline.use_novel_models:
-                    self.cleaning_panel.use_novel_radio.setChecked(True)
-                else:
-                    self.cleaning_panel.use_foundational_radio.setChecked(True)
-                    
-                # Refresh model lists to match the new type
-                if hasattr(self.cleaning_panel, 'refresh_model_lists'):
-                    self.cleaning_panel.refresh_model_lists()
-            
-            # Show notification
-            self.status_bar.showMessage(f"Switched to {model_type} models")
-            
-            # Update models label
-            self._update_models_label()
-        else:
-            QMessageBox.warning(self, "Warning", "Failed to toggle model type.")
-    
-    def process_image(self, options):
-        """Process the current image with the specified options."""
-        if self.original_image is None:
-            QMessageBox.warning(self, "Warning", "No image to process.")
-            return
-            
-        # Check if a processing thread is already running
-        if self.processing_thread is not None and self.processing_thread.isRunning():
-            QMessageBox.warning(self, "Warning", "Processing already in progress.")
-            return
-            
-        # Show processing indicator
-        self.progress_container.show()
-        self.progress_bar.setValue(0)
-        self.status_bar.showMessage("Processing image...")
-        
-        # Disable process button during processing
-        self.process_action.setEnabled(False)
-        
-        # Create and start processing thread
-        self.processing_thread = ProcessingThread(
-            self.pipeline, 
-            self.original_image, 
-            self.original_metadata, 
-            options
-        )
-        
-        # Connect signals
-        self.processing_thread.finished.connect(self.on_processing_finished)
-        self.processing_thread.progress.connect(self.on_processing_progress)
-        self.processing_thread.error.connect(self.on_processing_error)
-        
-        # Start processing
-        self.processing_thread.start()
-    
-    def process_current_image(self):
-        """Process the current image with default options."""
-        if self.original_image is None:
-            QMessageBox.warning(self, "Warning", "No image to process.")
-            return
-            
-        # Get options from the cleaning panel
-        options = self.cleaning_panel.get_options()
-        
-        # Process the image
-        self.process_image(options)
-    
-    @pyqtSlot(np.ndarray, dict)
-    def on_processing_finished(self, result, metadata):
-        """Handle processing thread completion."""
-        # Store enhanced image
-        self.enhanced_image = result
-        self.enhanced_metadata = metadata
-        
-        # Update comparison view
-        self.comparison_view.set_images(
-            self.original_image, self.enhanced_image,
-            self.original_metadata, self.enhanced_metadata
-        )
-        
-        # Hide progress indicator
-        self.progress_container.hide()
-        self.status_bar.showMessage("Processing complete")
-        
-        # Enable save actions
-        self.save_action.setEnabled(True)
-        self.save_as_action.setEnabled(True)
-        self.export_comparison_action.setEnabled(True)
-        
-        # Re-enable process button
-        self.process_action.setEnabled(True)
-        
-        # Clean up thread
-        self.processing_thread = None
-        
-        # Update models label
-        self._update_models_label()
-    
-    @pyqtSlot(int)
-    def on_processing_progress(self, progress):
-        """Handle processing progress updates."""
-        # Update progress bar
-        self.progress_bar.setValue(progress)
-    
-    @pyqtSlot(str)
-    def on_processing_error(self, error_message):
-        """Handle processing thread errors."""
-        # Hide progress indicator
-        self.progress_container.hide()
-        
-        # Show detailed error message
-        error_box = QMessageBox(self)
-        error_box.setWindowTitle("Processing Error")
-        error_box.setIcon(QMessageBox.Icon.Warning)
-        
-        error_text = f"""
-        <h3>An error occurred during image processing</h3>
-        <p>{error_message}</p>
-        <p>The application will continue running, but the processed image may not show all expected enhancements.</p>
-        <p>Possible solutions:</p>
-        <ul>
-            <li>Try using a different image</li>
-            <li>Disable some enhancement modules</li>
-            <li>Switch to {'foundational' if self.pipeline.use_novel_models else 'novel'} models</li>
-            <li>Check if the AI models are installed correctly</li>
-        </ul>
-        """
-        
-        error_box.setText(error_text)
-        error_box.setTextFormat(Qt.TextFormat.RichText)
-        error_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        error_box.exec()
-        
-        # Update status bar
-        self.status_bar.showMessage("Processing failed: " + error_message.split('\n')[0])
-        
-        # Re-enable process button
-        self.process_action.setEnabled(True)
-        
-        # Clean up thread
-        self.processing_thread = None
-    
-    def show_preferences(self):
-        """Show the preferences dialog."""
-        dialog = PreferencesDialog(self)
-        if dialog.exec():
-            # Reload configuration
-            self.config = Config()
-            
-            # Apply any immediate UI changes based on new settings
-            self._apply_preferences()
-            
-            # Update models label
-            self._update_models_label()
-
-    def _apply_preferences(self):
-        """Apply preferences that affect the UI."""
-        # Apply comparison view mode
-        view_mode = self.config.get("gui.comparison_view", "side_by_side")
-        for i in range(self.comparison_view.mode_combo.count()):
-            if self.comparison_view.mode_combo.itemData(i) == view_mode:
-                self.comparison_view.mode_combo.setCurrentIndex(i)
-                break
-        
-        # Apply model type if specified and different from current
-        use_novel = self.config.get("models.use_novel", True)
-        if self.pipeline.use_novel_models != use_novel:
-            self.pipeline.toggle_model_type()
-            
-            # Update radio buttons if they exist
-            if hasattr(self.cleaning_panel, 'use_novel_radio') and hasattr(self.cleaning_panel, 'use_foundational_radio'):
-                if use_novel:
-                    self.cleaning_panel.use_novel_radio.setChecked(True)
-                else:
-                    self.cleaning_panel.use_foundational_radio.setChecked(True)
-                    
-                # Refresh model lists
-                if hasattr(self.cleaning_panel, 'refresh_model_lists'):
-                    self.cleaning_panel.refresh_model_lists()
-    
-    def show_about(self):
-        """Show the about dialog."""
-        about_box = QMessageBox(self)
-        about_box.setWindowTitle("About Medical Image Enhancement")
-        
-        # Create a more professional about dialog
-        about_text = """
-        <h2 style="color: #0078D7;">Medical Image Enhancement</h2>
-        <p>A professional tool for enhancing medical images using AI-based techniques.</p>
-        <p><b>Version:</b> 1.0.0</p>
-        <p><b>Features:</b></p>
-        <ul>
-            <li>Advanced denoising</li>
-            <li>Super-resolution upscaling</li>
-            <li>Artifact removal</li>
-            <li>Support for DICOM and standard image formats</li>
-        </ul>
-        <p style="color: #666666; font-size: small;">© 2023 Medical Imaging Team</p>
-        """
-        
-        about_box.setText(about_text)
-        about_box.setTextFormat(Qt.TextFormat.RichText)
-        about_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        about_box.exec()
-    
-    def show_help(self):
-        """Show the help dialog."""
-        help_box = QMessageBox(self)
-        help_box.setWindowTitle("Help - Medical Image Enhancement")
-        
-        # Create a more comprehensive help dialog
-        help_text = """
-        <h2 style="color: #0078D7;">Medical Image Enhancement Help</h2>
-        
-        <h3>Basic Usage:</h3>
-        <ol>
-            <li>Open a medical image using <b>File > Open</b> or drag and drop</li>
-            <li>Select model type (Novel or Foundational) based on your needs:
-                <ul>
-                    <li><b>Novel models:</b> State-of-the-art quality but may be slower</li>
-                    <li><b>Foundational models:</b> Faster, more efficient processing</li>
-                </ul>
-            </li>
-            <li>Configure enhancement options in the left panel:
-                <ul>
-                    <li>Enable/disable specific enhancement modules</li>
-                    <li>Select specific models for each enhancement type</li>
-                    <li>Adjust parameters like denoising strength</li>
-                    <li>Set super-resolution scale factor</li>
-                </ul>
-            </li>
-            <li>Click <b>"Enhance Image"</b> to process</li>
-            <li>Use the comparison view to examine results</li>
-            <li>Save the enhanced image using <b>File > Save Enhanced</b></li>
-        </ol>
-        
-        <h3>Keyboard Shortcuts:</h3>
-        <ul>
-            <li><b>Ctrl+O:</b> Open image</li>
-            <li><b>Ctrl+S:</b> Save enhanced image</li>
-            <li><b>Ctrl+P:</b> Process image</li>
-            <li><b>Ctrl+T:</b> Toggle between novel and foundational models</li>
-            <li><b>Ctrl+Alt+S:</b> Save session</li>
-            <li><b>Ctrl+Alt+O:</b> Load session</li>
-        </ul>
-        
-        <p>For more information, please refer to the user manual.</p>
-        """
-        
-        help_box.setText(help_text)
-        help_box.setTextFormat(Qt.TextFormat.RichText)
-        help_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        
-        # Make the dialog larger
-        help_box.setMinimumWidth(600)
-        
-        help_box.exec()
+            QMessageBox.critical

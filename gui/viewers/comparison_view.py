@@ -8,13 +8,15 @@ import numpy as np
 from PyQt6.QtWidgets import (
     QWidget, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QSlider,
-    QFrame, QPushButton, QGridLayout, QGroupBox, QSizePolicy
+    QFrame, QPushButton, QGridLayout, QGroupBox, QSizePolicy,
+    QCheckBox, QSplitter
 )
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont
 from PyQt6.QtCore import Qt, QRectF, pyqtSignal, pyqtSlot, QSize
 
 from data.io.export import Exporter
 from gui.viewers.image_viewer import ImageViewer
+from gui.viewers.histogram_widget import HistogramWidget
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,7 @@ class ComparisonView(QWidget):
     - Split view with movable divider
     - Export of comparison as a single image
     - Synchronized zooming and panning
+    - Histogram comparison for quantitative analysis
     """
     
     def __init__(self, parent=None):
@@ -44,6 +47,7 @@ class ComparisonView(QWidget):
         self.comparison_mode = ComparisonMode.SIDE_BY_SIDE
         self.overlay_opacity = 0.5
         self.split_position = 0.5
+        self.show_histograms = True
         
         self._init_ui()
     
@@ -98,13 +102,23 @@ class ComparisonView(QWidget):
         self.split_slider.valueChanged.connect(self._on_split_changed)
         controls_layout.addWidget(self.split_slider, 0, 5)
         
+        # Add histogram toggle
+        self.histogram_check = QCheckBox("Show Histograms")
+        self.histogram_check.setChecked(True)
+        self.histogram_check.stateChanged.connect(self._on_histogram_toggled)
+        controls_layout.addWidget(self.histogram_check, 0, 6)
+        
         # Add Export button
         self.export_button = QPushButton("Export Comparison")
         self.export_button.clicked.connect(self._on_export_clicked)
-        controls_layout.addWidget(self.export_button, 0, 6)
+        controls_layout.addWidget(self.export_button, 0, 7)
         
         # Add controls to main layout
         layout.addWidget(controls_group)
+        
+        # Create a splitter for viewers and histograms
+        self.main_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.main_splitter.setChildrenCollapsible(False)
         
         # Container for viewers
         self.viewers_container = QWidget()
@@ -162,8 +176,34 @@ class ComparisonView(QWidget):
         self.viewers_layout.addWidget(self.original_frame)
         self.viewers_layout.addWidget(self.enhanced_frame)
         
-        # Add viewers container to main layout
-        layout.addWidget(self.viewers_container)
+        # Add viewers container to splitter
+        self.main_splitter.addWidget(self.viewers_container)
+        
+        # Create histogram container
+        self.histogram_container = QWidget()
+        self.histogram_layout = QHBoxLayout(self.histogram_container)
+        self.histogram_layout.setContentsMargins(0, 0, 0, 0)
+        self.histogram_layout.setSpacing(10)
+        
+        # Create histogram widgets
+        self.original_histogram = HistogramWidget()
+        self.original_histogram.set_title("Original Histogram")
+        
+        self.enhanced_histogram = HistogramWidget()
+        self.enhanced_histogram.set_title("Enhanced Histogram")
+        
+        # Add histograms to layout
+        self.histogram_layout.addWidget(self.original_histogram)
+        self.histogram_layout.addWidget(self.enhanced_histogram)
+        
+        # Add histogram container to splitter
+        self.main_splitter.addWidget(self.histogram_container)
+        
+        # Set initial splitter sizes (70% viewers, 30% histograms)
+        self.main_splitter.setSizes([700, 300])
+        
+        # Add splitter to main layout
+        layout.addWidget(self.main_splitter)
         
         # Update UI for initial mode
         self._update_ui_for_mode()
@@ -189,6 +229,19 @@ class ComparisonView(QWidget):
         self.enhanced_viewer.zoomChanged.connect(
             lambda factor: self.sync_zoom(factor, self.enhanced_viewer)
         )
+    
+    def _on_histogram_toggled(self, state):
+        """Handle histogram visibility toggling."""
+        self.show_histograms = state == Qt.CheckState.Checked.value
+        self.histogram_container.setVisible(self.show_histograms)
+        
+        # Adjust splitter sizes
+        if self.show_histograms:
+            # Show histograms: 70% viewers, 30% histograms
+            self.main_splitter.setSizes([700, 300])
+        else:
+            # Hide histograms: 100% viewers, 0% histograms
+            self.main_splitter.setSizes([1, 0])
     
     def sync_horizontal_scroll(self, value):
         """Synchronize horizontal scrolling between viewers."""
@@ -234,6 +287,10 @@ class ComparisonView(QWidget):
         # Set images to individual viewers
         self.original_viewer.set_image(original, original_metadata)
         self.enhanced_viewer.set_image(enhanced, enhanced_metadata)
+        
+        # Update histograms
+        self.original_histogram.set_image(original)
+        self.enhanced_histogram.set_image(enhanced)
         
         # Update the comparison display
         self._update_comparison()
@@ -328,99 +385,3 @@ class ComparisonView(QWidget):
                 logger.error(f"Error updating comparison: {e}")
                 # If all else fails, just show the enhanced image
                 self.comparison_viewer.set_image(self.enhanced_image)
-    
-    def _update_ui_for_mode(self):
-        """Update UI based on the current comparison mode."""
-        # Clear the viewers layout
-        while self.viewers_layout.count():
-            item = self.viewers_layout.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
-        
-        # Set up based on mode
-        if self.comparison_mode == ComparisonMode.SIDE_BY_SIDE:
-            self.viewers_layout.addWidget(self.original_frame)
-            self.viewers_layout.addWidget(self.enhanced_frame)
-            
-            # Hide controls not applicable to this mode
-            self.opacity_label.setVisible(False)
-            self.opacity_slider.setVisible(False)
-            self.split_label.setVisible(False)
-            self.split_slider.setVisible(False)
-        elif self.comparison_mode == ComparisonMode.OVERLAY:
-            self.viewers_layout.addWidget(self.comparison_frame)
-            
-            # Show opacity control, hide split control
-            self.opacity_label.setVisible(True)
-            self.opacity_slider.setVisible(True)
-            self.split_label.setVisible(False)
-            self.split_slider.setVisible(False)
-        elif self.comparison_mode == ComparisonMode.SPLIT:
-            self.viewers_layout.addWidget(self.comparison_frame)
-            
-            # Show split control, hide opacity control
-            self.opacity_label.setVisible(False)
-            self.opacity_slider.setVisible(False)
-            self.split_label.setVisible(True)
-            self.split_slider.setVisible(True)
-        
-        # Update the comparison display
-        self._update_comparison()
-    
-    @pyqtSlot(int)
-    def _on_mode_changed(self, index):
-        """Handle comparison mode changes."""
-        mode_value = self.mode_combo.itemData(index)
-        for mode in ComparisonMode:
-            if mode.value == mode_value:
-                self.comparison_mode = mode
-                break
-        
-        self._update_ui_for_mode()
-    
-    @pyqtSlot(int)
-    def _on_opacity_changed(self, value):
-        """Handle opacity slider changes."""
-        self.overlay_opacity = value / 100.0
-        self._update_comparison()
-    
-    @pyqtSlot(int)
-    def _on_split_changed(self, value):
-        """Handle split slider changes."""
-        self.split_position = value / 100.0
-        self._update_comparison()
-    
-    def _on_export_clicked(self):
-        """Handle export button clicks."""
-        self.export_comparison()
-    
-    def export_comparison(self, output_path=None):
-        """
-        Export the current comparison view to an image file.
-        
-        Args:
-            output_path: Path to save the comparison image
-            
-        Returns:
-            str: Path to saved file or None if cancelled/failed
-        """
-        if self.original_image is None or self.enhanced_image is None:
-            logger.warning("Cannot export comparison: no images loaded")
-            return None
-        
-        if output_path is None:
-            # Let the caller handle the file dialog if no path provided
-            return Exporter.create_comparison_image(
-                self.original_image, 
-                self.enhanced_image,
-                None,
-                mode=self.comparison_mode.value
-            )
-        else:
-            # Create and save the comparison image
-            return Exporter.create_comparison_image(
-                self.original_image, 
-                self.enhanced_image,
-                output_path,
-                mode=self.comparison_mode.value
-            )

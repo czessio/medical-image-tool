@@ -11,11 +11,12 @@ from PyQt6.QtWidgets import (
     QWidget, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QVBoxLayout, QHBoxLayout, QLabel, QSlider, QToolBar, 
     QGraphicsRectItem, QGraphicsLineItem, QGraphicsEllipseItem, QGraphicsPathItem,
-    QGraphicsTextItem, QPushButton, QColorDialog, QFrame
+    QGraphicsTextItem, QPushButton, QColorDialog, QFrame, QMenu,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QPushButton, QDialogButtonBox
 )
 from PyQt6.QtGui import (
     QPixmap, QImage, QPainter, QColor, QPen, QAction, QIcon, 
-    QBrush, QPainterPath, QFont, QTransform
+    QBrush, QPainterPath, QFont, QTransform, QGuiApplication
 )
 from PyQt6.QtCore import (
     Qt, QRectF, QPointF, pyqtSignal, QSize, QEvent, QLine, 
@@ -38,6 +39,7 @@ class AnnotationMode:
     ARROW = 5
     TEXT = 6
     MEASURE = 7
+    ROI_SELECT = 8  # New mode for ROI selection
 
 class AnnotationItem:
     """Base class for annotation items."""
@@ -64,6 +66,7 @@ class ImageViewer(QWidget):
     regionSelected = pyqtSignal(QRectF)    # Emitted when user selects a region
     annotationAdded = pyqtSignal(object)   # Emitted when an annotation is added
     zoomChanged = pyqtSignal(float)        # Emitted when zoom level changes
+    roi_selected = pyqtSignal(QRectF)      # Emitted when ROI is selected
     
     def __init__(self, parent=None):
         """Initialize the image viewer."""
@@ -81,6 +84,8 @@ class ImageViewer(QWidget):
         self.annotation_pen = QPen(QColor(255, 0, 0))  # Red by default
         self.annotation_pen.setWidth(2)
         self.show_annotations = True
+        self.roi_selection = None  # Store current ROI selection
+        self.roi_rect = None  # QGraphicsRectItem for ROI display
         
         self._init_ui()
     
@@ -218,6 +223,20 @@ class ImageViewer(QWidget):
         ))
         self.toolbar.addAction(self.text_action)
         
+        # Add ROI selection tool
+        self.roi_action = QAction("Select ROI", self)
+        self.roi_action.setCheckable(True)
+        self.roi_action.triggered.connect(lambda checked: self.set_annotation_mode(
+            AnnotationMode.ROI_SELECT if checked else AnnotationMode.NONE
+        ))
+        self.toolbar.addAction(self.roi_action)
+        
+        # Add ROI processing button
+        self.process_roi_action = QAction("Process ROI", self)
+        self.process_roi_action.setEnabled(False)  # Disabled until ROI is selected
+        self.process_roi_action.triggered.connect(self._on_process_roi)
+        self.toolbar.addAction(self.process_roi_action)
+        
         self.toolbar.addSeparator()
         
         # Toggle annotations visibility
@@ -254,15 +273,20 @@ class ImageViewer(QWidget):
                 self.handle_mouse_move(event)
                 self.update_current_annotation()
             elif event.type() == QEvent.Type.MouseButtonPress:
-                self.handle_mouse_press(event)
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self.handle_mouse_press(event)
+                elif event.button() == Qt.MouseButton.RightButton:
+                    self.handle_right_click(event)
+                    return True  # Consume right-click events
             elif event.type() == QEvent.Type.MouseButtonRelease:
-                self.handle_mouse_release(event)
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self.handle_mouse_release(event)
             
             # Add wheel event handling
             elif event.type() == QEvent.Type.Wheel:
                 self._wheel_event(event)
                 return True  # Consume the event
-    
+        
         return super().eventFilter(obj, event)
     
     def _wheel_event(self, event):
@@ -357,6 +381,16 @@ class ImageViewer(QWidget):
                 else:
                     self.current_annotation_item = AnnotationItem(line_item, AnnotationMode.LINE)
                     
+            elif self.annotation_mode == AnnotationMode.ROI_SELECT:
+                # Remove existing ROI rect if any
+                if self.roi_rect is not None:
+                    self.scene.removeItem(self.roi_rect)
+                
+                # Create a new ROI rectangle
+                self.roi_rect = QGraphicsRectItem(QRectF(scene_pos, scene_pos))
+                self.roi_rect.setPen(QPen(QColor(0, 255, 0), 2))  # Green pen for ROI
+                self.scene.addItem(self.roi_rect)
+                self.current_annotation_item = None  # Don't track as a regular annotation
                                       
             elif self.annotation_mode == AnnotationMode.TEXT:
                 # Create a text item
@@ -385,11 +419,74 @@ class ImageViewer(QWidget):
                 self.annotationAdded.emit(self.current_annotation_item)
                 self.current_annotation_item = None
             
+            # Handle ROI selection
+            if self.annotation_mode == AnnotationMode.ROI_SELECT and self.roi_rect is not None:
+                # Finalize ROI selection
+                rect = self.roi_rect.rect()
+                
+                # Only accept ROI if it has a reasonable size
+                if rect.width() > 10 and rect.height() > 10:
+                    self.roi_selection = rect
+                    self.process_roi_action.setEnabled(True)
+                    
+                    # Emit signal with ROI
+                    self.roi_selected.emit(rect)
+                else:
+                    # Remove too small ROI
+                    self.scene.removeItem(self.roi_rect)
+                    self.roi_rect = None
+                    self.roi_selection = None
+                    self.process_roi_action.setEnabled(False)
+            
             self.start_point = None
+    
+    def handle_right_click(self, event):
+        """Handle right-click context menu."""
+        if self.image_data is None:
+            return
+        
+        # Create context menu
+        menu = QMenu(self)
+        
+        # Add window/level adjustment if it's a medical image
+        if self.metadata and ('WindowCenter' in self.metadata or 'WindowWidth' in self.metadata):
+            window_level_action = menu.addAction("Adjust Window/Level")
+            window_level_action.triggered.connect(self.show_window_level_dialog)
+        
+        # Add reset window/level if it's currently being applied
+        if self.window_width is not None or self.window_center is not None:
+            reset_window_level_action = menu.addAction("Reset Window/Level")
+            reset_window_level_action.triggered.connect(self.reset_window_level)
+        
+        # Add ROI selection option
+        roi_action = menu.addAction("Select ROI")
+        roi_action.triggered.connect(lambda: self.set_annotation_mode(AnnotationMode.ROI_SELECT))
+        
+        # Add "Copy image info" option
+        copy_info_action = menu.addAction("Copy Image Info")
+        copy_info_action.triggered.connect(self.copy_image_info)
+        
+        # Show the menu at the mouse position
+        menu.exec(event.globalPosition().toPoint())
     
     def update_current_annotation(self):
         """Update the current annotation based on mouse movement."""
-        if self.current_annotation_item is None or self.start_point is None:
+        if self.current_annotation_item is None and self.start_point is None:
+            return
+        
+        # Special handling for ROI selection
+        if self.annotation_mode == AnnotationMode.ROI_SELECT and self.roi_rect is not None and self.start_point is not None:
+            # Update rectangle size
+            rect = QRectF(
+                min(self.start_point.x(), self.current_point.x()),
+                min(self.start_point.y(), self.current_point.y()),
+                abs(self.current_point.x() - self.start_point.x()),
+                abs(self.current_point.y() - self.start_point.y())
+            )
+            self.roi_rect.setRect(rect)
+            return
+        
+        if self.current_annotation_item is None:
             return
         
         if self.current_annotation_item.mode == AnnotationMode.RECTANGLE:
@@ -435,12 +532,15 @@ class ImageViewer(QWidget):
                     (self.start_point.x() + self.current_point.x()) / 2,
                     (self.start_point.y() + self.current_point.y()) / 2
                 )
+                self.current_annotation_item.data["text_item"].setPos(mid_point)
+    
     def set_annotation_mode(self, mode):
         """Set the current annotation mode."""
         # Reset other action states
         tool_actions = [
             self.pan_action, self.rect_action, self.ellipse_action,
-            self.line_action, self.measure_action, self.text_action
+            self.line_action, self.measure_action, self.text_action,
+            self.roi_action  # Add ROI action to the list
         ]
         
         for action in tool_actions:
@@ -470,6 +570,16 @@ class ImageViewer(QWidget):
         elif mode == AnnotationMode.TEXT:
             self.graphics_view.viewport().setCursor(Qt.CursorShape.IBeamCursor)
             self.text_action.setChecked(True)
+        elif mode == AnnotationMode.ROI_SELECT:
+            self.graphics_view.viewport().setCursor(Qt.CursorShape.CrossCursor)
+            self.roi_action.setChecked(True)
+            
+            # Clear existing ROI if any
+            if self.roi_rect is not None:
+                self.scene.removeItem(self.roi_rect)
+                self.roi_rect = None
+                self.roi_selection = None
+                self.process_roi_action.setEnabled(False)
     
     def toggle_annotations(self, show):
         """Toggle visibility of annotations."""
@@ -552,170 +662,67 @@ class ImageViewer(QWidget):
         
         # Clear annotations for new image
         self.clear_annotations()
-    
-    
-    
+        
+        # Clear ROI
+        self.clear_roi()
     
     def _update_pixmap(self):
-            """Update the displayed pixmap from the current image data."""
-            if self.image_data is None:
-                return
-            
-            # Create display image (handle windowing if needed)
-            if self.window_width is not None and self.window_center is not None:
-                from data.io.dicom_handler import DicomHandler
-                display_image = DicomHandler.apply_window_level(
-                    self.image_data, self.metadata,
-                    window=self.window_width, 
-                    level=self.window_center
-                )
-            else:
-                display_image = self.image_data
-            
-            # Convert the numpy array to QImage
-            if np.issubdtype(display_image.dtype, np.floating):
-                display_image = (display_image * 255).clip(0, 255).astype(np.uint8)
-            
-            height, width = display_image.shape[:2]
-            
-            # Make sure display_image is contiguous in memory
-            if not display_image.flags['C_CONTIGUOUS']:
-                display_image = np.ascontiguousarray(display_image)
-            
-            if len(display_image.shape) == 2:
-                # Grayscale image
-                q_image = QImage(
-                    display_image.tobytes(),  # Use tobytes() instead of data
-                    width, height,
-                    width,  # Bytes per line
-                    QImage.Format.Format_Grayscale8
-                )
-            elif display_image.shape[2] == 3:
-                # RGB image
-                q_image = QImage(
-                    display_image.tobytes(),  # Use tobytes() instead of data
-                    width, height,
-                    width * 3,  # Bytes per line (3 channels)
-                    QImage.Format.Format_RGB888
-                )
-            elif display_image.shape[2] == 4:
-                # RGBA image
-                q_image = QImage(
-                    display_image.tobytes(),  # Use tobytes() instead of data
-                    width, height,
-                    width * 4,  # Bytes per line (4 channels)
-                    QImage.Format.Format_RGBA8888
-                )
-            else:
-                logger.error(f"Unsupported image format: {display_image.shape}")
-                return
-            
-            # Create pixmap from QImage
-            pixmap = QPixmap.fromImage(q_image)
-            self.pixmap_item.setPixmap(pixmap)
-            
-            # Update scene rect
-            self.scene.setSceneRect(QRectF(0, 0, width, height))
-    
-    
-    
-    
-    
-    
-    def zoom_in(self):
-        """Zoom in by a fixed factor."""
-        self.zoom_factor *= 1.2
-        self.graphics_view.scale(1.2, 1.2)
-        self._update_zoom_label()
-        self.zoomChanged.emit(self.zoom_factor)
-    
-    def zoom_out(self):
-        """Zoom out by a fixed factor."""
-        self.zoom_factor /= 1.2
-        self.graphics_view.scale(1/1.2, 1/1.2)
-        self._update_zoom_label()
-        self.zoomChanged.emit(self.zoom_factor)
-    
-    def zoom_fit(self):
-        """Zoom to fit the image in the view."""
-        if self.pixmap_item.pixmap().isNull():
-            return
-            
-        # Reset the view
-        self.graphics_view.resetTransform()
-        self.zoom_factor = 1.0
-        
-        # Calculate the scale to fit
-        view_rect = self.graphics_view.viewport().rect()
-        scene_rect = self.scene.sceneRect()
-        
-        x_scale = view_rect.width() / scene_rect.width()
-        y_scale = view_rect.height() / scene_rect.height()
-        
-        # Use the smaller scale to fit entirely in the view
-        scale = min(x_scale, y_scale) * 0.95  # 5% margin
-        
-        # Apply the scale
-        self.graphics_view.scale(scale, scale)
-        self.zoom_factor = scale
-        
-        self._update_zoom_label()
-        self.zoomChanged.emit(self.zoom_factor)
-    
-    def _update_zoom_label(self):
-        """Update the zoom level display."""
-        percent = int(self.zoom_factor * 100)
-        self.zoom_label.setText(f"Zoom: {percent}%")
-    
-    def set_window_level(self, window, level):
-        """
-        Set the window/level (contrast/brightness) for medical images.
-        
-        Args:
-            window: Window width (contrast)
-            level: Window center (brightness)
-        """
-        self.window_width = window
-        self.window_center = level
-        self._update_pixmap()
-    
-    def reset_window_level(self):
-        """Reset the window/level to default values."""
-        self.window_width = None
-        self.window_center = None
-        self._update_pixmap()
-    
-    def show_info_overlay(self, show=True):
-        """
-        Show or hide information overlay on the image.
-        
-        Args:
-            show: Whether to show the overlay
-        """
+        """Update the displayed pixmap from the current image data."""
         if self.image_data is None:
             return
-        
-        if show:
-            # Create info text based on metadata
-            info_lines = []
             
-            # Add basic image info
-            height, width = self.image_data.shape[:2]
-            info_lines.append(f"Size: {width}x{height}")
-            
-            # Add DICOM metadata if available
-            if 'PatientID' in self.metadata:
-                info_lines.append(f"Patient ID: {self.metadata['PatientID']}")
-            if 'PatientName' in self.metadata:
-                info_lines.append(f"Patient: {self.metadata['PatientName']}")
-            if 'Modality' in self.metadata:
-                info_lines.append(f"Modality: {self.metadata['Modality']}")
-            
-            info_text = "\n".join(info_lines)
-            
-            # Add overlay to image
-            display_image = draw_info_overlay(self.image_data, info_text)
-            self.set_image(display_image, self.metadata)
+        # Create display image (handle windowing if needed)
+        if self.window_width is not None and self.window_center is not None:
+            from data.io.dicom_handler import DicomHandler
+            display_image = DicomHandler.apply_window_level(
+                self.image_data, self.metadata,
+                window=self.window_width, 
+                level=self.window_center
+            )
         else:
-            # Restore original image
-            self._update_pixmap()
+            display_image = self.image_data
+        
+        # Convert the numpy array to QImage
+        if np.issubdtype(display_image.dtype, np.floating):
+            display_image = (display_image * 255).clip(0, 255).astype(np.uint8)
+        
+        height, width = display_image.shape[:2]
+        
+        # Make sure display_image is contiguous in memory
+        if not display_image.flags['C_CONTIGUOUS']:
+            display_image = np.ascontiguousarray(display_image)
+        
+        if len(display_image.shape) == 2:
+            # Grayscale image
+            q_image = QImage(
+                display_image.tobytes(),  # Use tobytes() instead of data
+                width, height,
+                width,  # Bytes per line
+                QImage.Format.Format_Grayscale8
+            )
+        elif display_image.shape[2] == 3:
+            # RGB image
+            q_image = QImage(
+                display_image.tobytes(),  # Use tobytes() instead of data
+                width, height,
+                width * 3,  # Bytes per line (3 channels)
+                QImage.Format.Format_RGB888
+            )
+        elif display_image.shape[2] == 4:
+            # RGBA image
+            q_image = QImage(
+                display_image.tobytes(),  # Use tobytes() instead of data
+                width, height,
+                width * 4,  # Bytes per line (4 channels)
+                QImage.Format.Format_RGBA8888
+            )
+        else:
+            logger.error(f"Unsupported image format: {display_image.shape}")
+            return
+        
+        # Create pixmap from QImage
+        pixmap = QPixmap.fromImage(q_image)
+        self.pixmap_item.setPixmap(pixmap)
+        
+        # Update scene rect
+        self.scene.setSceneRect(QRectF(0, 0, width, height))

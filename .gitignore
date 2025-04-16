@@ -6,3 +6,4 @@
 "weights/**/*.pt" 
 "weights/**/*.pth" 
 *.pt 
+*.pth 
