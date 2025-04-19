@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QWidget, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QSlider,
     QFrame, QPushButton, QGridLayout, QGroupBox, QSizePolicy,
-    QCheckBox, QSplitter
+    QCheckBox, QSplitter, QFileDialog
 )
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont
 from PyQt6.QtCore import Qt, QRectF, pyqtSignal, pyqtSlot, QSize
@@ -230,6 +230,123 @@ class ComparisonView(QWidget):
             lambda factor: self.sync_zoom(factor, self.enhanced_viewer)
         )
     
+    def _on_mode_changed(self, index):
+        """
+        Handle changes to the comparison mode.
+        
+        Args:
+            index: Index of the selected mode
+        """
+        # Get the selected mode text
+        mode_text = self.mode_combo.itemText(index)
+        
+        # Map mode text to comparison mode
+        mode_map = {
+            "Side by Side": ComparisonMode.SIDE_BY_SIDE,
+            "Overlay": ComparisonMode.OVERLAY, 
+            "Split": ComparisonMode.SPLIT
+        }
+        
+        # Set the comparison mode
+        self.comparison_mode = mode_map.get(mode_text, ComparisonMode.SIDE_BY_SIDE)
+        
+        # Update the comparison display
+        self._update_comparison()
+        
+        # Update UI controls based on selected mode
+        self._update_ui_for_mode()
+    
+    def _update_ui_for_mode(self):
+        """Update UI controls based on the current comparison mode."""
+        # Show/hide viewers based on mode
+        if self.comparison_mode == ComparisonMode.SIDE_BY_SIDE:
+            # Clear the comparison layout
+            for i in reversed(range(self.viewers_layout.count())): 
+                item = self.viewers_layout.itemAt(i)
+                if item and item.widget():
+                    item.widget().setParent(None)
+            
+            # Add original and enhanced viewers
+            self.viewers_layout.addWidget(self.original_frame)
+            self.viewers_layout.addWidget(self.enhanced_frame)
+            
+            # Hide comparison frame
+            self.comparison_frame.setParent(None)
+            
+            # Enable/disable sliders
+            self.opacity_label.setEnabled(False)
+            self.opacity_slider.setEnabled(False)
+            self.split_label.setEnabled(False)
+            self.split_slider.setEnabled(False)
+        else:
+            # Clear the comparison layout
+            for i in reversed(range(self.viewers_layout.count())):
+                item = self.viewers_layout.itemAt(i)
+                if item and item.widget():
+                    item.widget().setParent(None)
+            
+            # Add comparison viewer
+            self.viewers_layout.addWidget(self.comparison_frame)
+            
+            # Enable/disable sliders based on mode
+            self.opacity_label.setEnabled(self.comparison_mode == ComparisonMode.OVERLAY)
+            self.opacity_slider.setEnabled(self.comparison_mode == ComparisonMode.OVERLAY)
+            self.split_label.setEnabled(self.comparison_mode == ComparisonMode.SPLIT)
+            self.split_slider.setEnabled(self.comparison_mode == ComparisonMode.SPLIT)
+    
+    def _on_opacity_changed(self, value):
+        """
+        Handle changes to the overlay opacity.
+        
+        Args:
+            value: New opacity value (0-100)
+        """
+        self.overlay_opacity = value / 100.0
+        if self.comparison_mode == ComparisonMode.OVERLAY:
+            self._update_comparison()
+    
+    def _on_split_changed(self, value):
+        """
+        Handle changes to the split position.
+        
+        Args:
+            value: New split position (0-100)
+        """
+        self.split_position = value / 100.0
+        if self.comparison_mode == ComparisonMode.SPLIT:
+            self._update_comparison()
+    
+    def _on_export_clicked(self):
+        """Handle export button click."""
+        # Get a save file name from user
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Comparison", "", "PNG Files (*.png);;JPEG Files (*.jpg *.jpeg);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            # Create a comparison image based on current mode
+            mode = self.comparison_mode.value
+            comparison = Exporter.create_comparison_image(
+                self.original_image, 
+                self.enhanced_image,
+                output_path=file_path, 
+                mode=mode
+            )
+            
+            # Show status message if parent has a status bar
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'status_bar'):
+                    parent.status_bar.showMessage(f"Comparison exported to {file_path}")
+                    break
+                parent = parent.parent()
+            
+        except Exception as e:
+            logger.error(f"Error exporting comparison: {e}")
+    
     def _on_histogram_toggled(self, state):
         """Handle histogram visibility toggling."""
         self.show_histograms = state == Qt.CheckState.Checked.value
@@ -301,87 +418,87 @@ class ComparisonView(QWidget):
                                       id(self.original_image) != id(self.enhanced_image))
     
     def _update_comparison(self):
-            """Update the comparison display based on current mode."""
-            if self.original_image is None or self.enhanced_image is None:
-                return
+        """Update the comparison display based on current mode."""
+        if self.original_image is None or self.enhanced_image is None:
+            return
+            
+        try:
+            if self.comparison_mode == ComparisonMode.SIDE_BY_SIDE:
+                # Already displayed in separate viewers
+                pass
+            else:
+                # Create a comparison image
+                mode = self.comparison_mode.value
                 
-            try:
-                if self.comparison_mode == ComparisonMode.SIDE_BY_SIDE:
-                    # Already displayed in separate viewers
-                    pass
+                # Handle images with different shapes
+                if self.original_image.shape != self.enhanced_image.shape:
+                    logger.warning(f"Image shapes don't match: original {self.original_image.shape}, enhanced {self.enhanced_image.shape}")
+                    # Resize enhanced to match original
+                    from data.processing.transforms import resize_image
+                    enhanced_resized = resize_image(
+                        self.enhanced_image, 
+                        (self.original_image.shape[1], self.original_image.shape[0]), 
+                        preserve_aspect_ratio=False
+                    )
                 else:
-                    # Create a comparison image
-                    mode = self.comparison_mode.value
-                    
-                    # Handle images with different shapes
-                    if self.original_image.shape != self.enhanced_image.shape:
-                        logger.warning(f"Image shapes don't match: original {self.original_image.shape}, enhanced {self.enhanced_image.shape}")
-                        # Resize enhanced to match original
-                        from data.processing.transforms import resize_image
-                        enhanced_resized = resize_image(
-                            self.enhanced_image, 
-                            (self.original_image.shape[1], self.original_image.shape[0]), 
-                            preserve_aspect_ratio=False
-                        )
-                    else:
-                        enhanced_resized = self.enhanced_image
-                    
-                    if mode == ComparisonMode.OVERLAY.value:
-                        # Use the Exporter function to create overlay with current opacity
-                        try:
-                            alpha = self.overlay_opacity
-                            beta = 1.0 - alpha
-                            comparison = self.original_image * beta + enhanced_resized * alpha
-                        except Exception as e:
-                            logger.error(f"Error creating overlay: {e}")
-                            # Fallback to simple overlay
-                            comparison = enhanced_resized.copy()
-                            
-                    elif mode == ComparisonMode.SPLIT.value:
-                        # Create a split view image
-                        try:
-                            comparison = self.original_image.copy()
-                            h, w = comparison.shape[:2]
-                            split_x = int(w * self.split_position)
-                            
-                            # Handle different number of channels
-                            if len(comparison.shape) != len(enhanced_resized.shape):
-                                if len(comparison.shape) == 2 and len(enhanced_resized.shape) == 3:
-                                    # Convert comparison to RGB
-                                    comparison = np.stack([comparison] * 3, axis=2)
-                                elif len(comparison.shape) == 3 and len(enhanced_resized.shape) == 2:
-                                    # Convert enhanced to RGB
-                                    enhanced_resized = np.stack([enhanced_resized] * 3, axis=2)
-                            
-                            comparison[:, split_x:] = enhanced_resized[:, split_x:]
-                            
-                            # Add a vertical line at the split point
-                            line_width = 2
-                            split_range = max(1, min(split_x + line_width, w) - max(0, split_x - line_width))
-                            
-                            # Create a bright line that will be visible on any background
-                            if len(comparison.shape) == 2:  # Grayscale
-                                comparison[:, max(0, split_x - line_width):min(w, split_x + line_width)] = 1.0
-                            else:  # Color
-                                # Use blue for the split line
-                                comparison[:, max(0, split_x - line_width):min(w, split_x + line_width), 0] = 0.0  # R
-                                comparison[:, max(0, split_x - line_width):min(w, split_x + line_width), 1] = 0.5  # G
-                                comparison[:, max(0, split_x - line_width):min(w, split_x + line_width), 2] = 1.0  # B
-                        except Exception as e:
-                            logger.error(f"Error creating split view: {e}")
-                            # Fallback to side-by-side
-                            comparison = Exporter.create_comparison_image(
-                                self.original_image, enhanced_resized, mode='side_by_side'
-                            )
-                    else:
-                        # Use side-by-side as fallback
+                    enhanced_resized = self.enhanced_image
+                
+                if mode == ComparisonMode.OVERLAY.value:
+                    # Use the Exporter function to create overlay with current opacity
+                    try:
+                        alpha = self.overlay_opacity
+                        beta = 1.0 - alpha
+                        comparison = self.original_image * beta + enhanced_resized * alpha
+                    except Exception as e:
+                        logger.error(f"Error creating overlay: {e}")
+                        # Fallback to simple overlay
+                        comparison = enhanced_resized.copy()
+                        
+                elif mode == ComparisonMode.SPLIT.value:
+                    # Create a split view image
+                    try:
+                        comparison = self.original_image.copy()
+                        h, w = comparison.shape[:2]
+                        split_x = int(w * self.split_position)
+                        
+                        # Handle different number of channels
+                        if len(comparison.shape) != len(enhanced_resized.shape):
+                            if len(comparison.shape) == 2 and len(enhanced_resized.shape) == 3:
+                                # Convert comparison to RGB
+                                comparison = np.stack([comparison] * 3, axis=2)
+                            elif len(comparison.shape) == 3 and len(enhanced_resized.shape) == 2:
+                                # Convert enhanced to RGB
+                                enhanced_resized = np.stack([enhanced_resized] * 3, axis=2)
+                        
+                        comparison[:, split_x:] = enhanced_resized[:, split_x:]
+                        
+                        # Add a vertical line at the split point
+                        line_width = 2
+                        split_range = max(1, min(split_x + line_width, w) - max(0, split_x - line_width))
+                        
+                        # Create a bright line that will be visible on any background
+                        if len(comparison.shape) == 2:  # Grayscale
+                            comparison[:, max(0, split_x - line_width):min(w, split_x + line_width)] = 1.0
+                        else:  # Color
+                            # Use blue for the split line
+                            comparison[:, max(0, split_x - line_width):min(w, split_x + line_width), 0] = 0.0  # R
+                            comparison[:, max(0, split_x - line_width):min(w, split_x + line_width), 1] = 0.5  # G
+                            comparison[:, max(0, split_x - line_width):min(w, split_x + line_width), 2] = 1.0  # B
+                    except Exception as e:
+                        logger.error(f"Error creating split view: {e}")
+                        # Fallback to side-by-side
                         comparison = Exporter.create_comparison_image(
                             self.original_image, enhanced_resized, mode='side_by_side'
                         )
-                    
-                    # Display in the comparison viewer
-                    self.comparison_viewer.set_image(comparison)
-            except Exception as e:
-                logger.error(f"Error updating comparison: {e}")
-                # If all else fails, just show the enhanced image
-                self.comparison_viewer.set_image(self.enhanced_image)
+                else:
+                    # Use side-by-side as fallback
+                    comparison = Exporter.create_comparison_image(
+                        self.original_image, enhanced_resized, mode='side_by_side'
+                    )
+                
+                # Display in the comparison viewer
+                self.comparison_viewer.set_image(comparison)
+        except Exception as e:
+            logger.error(f"Error updating comparison: {e}")
+            # If all else fails, just show the enhanced image
+            self.comparison_viewer.set_image(self.enhanced_image)

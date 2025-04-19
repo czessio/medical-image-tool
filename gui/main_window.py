@@ -462,6 +462,177 @@ class MainWindow(QMainWindow):
         # Save splitter sizes
         settings.setValue("splitterSizes", self.main_splitter.sizes())
     
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    def process_roi(self, options):
+        """
+        Process the selected region of interest with the specified options.
+        
+        Args:
+            options: Processing options from the cleaning panel
+        """
+        if self.original_image is None:
+            self.status_bar.showMessage("No image loaded to process ROI")
+            return
+            
+        # Get the current ROI if available
+        roi = None
+        if hasattr(self.comparison_view.original_viewer, 'current_roi'):
+            roi = self.comparison_view.original_viewer.current_roi
+        
+        if roi is None:
+            self.status_bar.showMessage("No ROI selected. Select a region first.")
+            return
+        
+        # Extract ROI from original image
+        x, y, w, h = roi
+        roi_image = self.original_image[y:y+h, x:x+w]
+        
+        if roi_image.size == 0:
+            self.status_bar.showMessage("Invalid ROI selection")
+            return
+        
+        # Show processing indicator
+        self.progress_container.show()
+        self.progress_bar.setValue(0)
+        self.status_bar.showMessage("Processing ROI...")
+        
+        # Disable process button during processing
+        self.process_action.setEnabled(False)
+        
+        # Create and start processing thread for the ROI
+        self.processing_thread = ProcessingThread(
+            self.pipeline, 
+            roi_image, 
+            self.original_metadata, 
+            options
+        )
+        
+        # Connect signals
+        self.processing_thread.finished.connect(self.on_roi_processing_finished)
+        self.processing_thread.progress.connect(self.on_processing_progress)
+        self.processing_thread.error.connect(self.on_processing_error)
+        
+        # Start processing
+        self.processing_thread.start()
+
+    def on_roi_processing_finished(self, result, metadata):
+        """
+        Handle completion of ROI processing.
+        
+        Args:
+            result: Processed ROI image
+            metadata: Metadata for the processed image
+        """
+        # Get the current ROI
+        if not hasattr(self.comparison_view.original_viewer, 'current_roi'):
+            self.status_bar.showMessage("ROI information lost during processing")
+            return
+            
+        roi = self.comparison_view.original_viewer.current_roi
+        if roi is None:
+            self.status_bar.showMessage("ROI information lost during processing")
+            return
+        
+        # Create a copy of the enhanced image if it exists, otherwise use original
+        if self.enhanced_image is not None:
+            target_image = self.enhanced_image.copy()
+        else:
+            target_image = self.original_image.copy()
+        
+        # Insert the processed ROI into the target image
+        x, y, w, h = roi
+        
+        # Make sure the processed ROI has the correct size
+        if result.shape[:2] != (h, w):
+            from data.processing.transforms import resize_image
+            result = resize_image(result, (w, h), preserve_aspect_ratio=False)
+        
+        # Handle different channel configurations
+        if len(result.shape) != len(target_image.shape):
+            if len(result.shape) == 2 and len(target_image.shape) == 3:
+                # Convert grayscale to match target channels
+                result = np.stack([result] * target_image.shape[2], axis=2)
+            elif len(result.shape) == 3 and len(target_image.shape) == 2:
+                # Take average of channels to get grayscale
+                result = np.mean(result, axis=2)
+        
+        # Insert the processed ROI
+        target_image[y:y+h, x:x+w] = result
+        
+        # Update the enhanced image
+        self.enhanced_image = target_image
+        self.enhanced_metadata = metadata
+        
+        # Update comparison view
+        self.comparison_view.set_images(
+            self.original_image, self.enhanced_image,
+            self.original_metadata, self.enhanced_metadata
+        )
+        
+        # Hide progress indicator
+        self.progress_container.hide()
+        self.status_bar.showMessage("ROI processing complete")
+        
+        # Enable save actions
+        self.save_action.setEnabled(True)
+        self.save_as_action.setEnabled(True)
+        self.export_comparison_action.setEnabled(True)
+        
+        # Re-enable process button
+        self.process_action.setEnabled(True)
+        
+        # Clean up thread
+        self.processing_thread = None
+
+    def clear_roi(self):
+        """
+        Clear the current ROI selection.
+        """
+        # Clear ROI in viewers
+        if hasattr(self.comparison_view.original_viewer, 'clear_roi'):
+            self.comparison_view.original_viewer.clear_roi()
+        
+        if hasattr(self.comparison_view.enhanced_viewer, 'clear_roi'):
+            self.comparison_view.enhanced_viewer.clear_roi()
+        
+        self.status_bar.showMessage("ROI selection cleared")
+
+    def on_roi_selected(self, rect):
+        """
+        Handle ROI selection in the image viewers.
+        
+        Args:
+            rect: Selected rectangle (x, y, width, height)
+        """
+        # Store the selected ROI
+        if hasattr(self.comparison_view.original_viewer, 'current_roi'):
+            self.comparison_view.original_viewer.current_roi = rect
+        
+        if hasattr(self.comparison_view.enhanced_viewer, 'current_roi'):
+            self.comparison_view.enhanced_viewer.current_roi = rect
+        
+        # Show info in status bar
+        x, y, w, h = rect
+        self.status_bar.showMessage(f"ROI selected: x={x}, y={y}, width={w}, height={h}")
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     def closeEvent(self, event):
         """Handle window close event."""
         self.save_settings()
@@ -857,6 +1028,78 @@ class MainWindow(QMainWindow):
             logger.error(f"Error loading session: {e}")
             QMessageBox.critical(self, "Error", f"Error loading session:\n{str(e)}")
     
+    
+    
+    
+    
+    def show_preferences(self):
+        """Show the preferences dialog."""
+        from gui.dialogs.preferences_dialog import PreferencesDialog
+        
+        dialog = PreferencesDialog(self)
+        if dialog.exec():
+            # Apply preferences if dialog was accepted
+            logger.info("Preferences updated")
+            
+            # Check if novel models setting changed
+            use_novel = self.config.get("models.use_novel", True)
+            if use_novel != self.pipeline.use_novel_models:
+                self.toggle_model_type()
+    
+    
+    
+    def show_about(self):
+        """Show the about dialog."""
+        from PyQt6.QtWidgets import QMessageBox
+        
+        about_text = """
+        <h2>Medical Image Enhancement</h2>
+        <p>Version 1.0.0</p>
+        <p>An advanced application for enhancing medical images using AI models.</p>
+        <p>Featuring:</p>
+        <ul>
+            <li>Noise reduction with DnCNN</li>
+            <li>Super-resolution with EDSR</li>
+            <li>Artifact removal with U-Net</li>
+            <li>Novel deep learning models</li>
+        </ul>
+        <p>&copy; 2024 Medical Imaging Team</p>
+        """
+        
+        QMessageBox.about(self, "About Medical Image Enhancement", about_text)
+
+    def show_help(self):
+        """Show the help dialog."""
+        from PyQt6.QtWidgets import QMessageBox
+        
+        help_text = """
+        <h2>Medical Image Enhancement Help</h2>
+        <h3>Basic Usage:</h3>
+        <ol>
+            <li>Open an image using File > Open or Ctrl+O</li>
+            <li>Use the cleaning panel on the left to select enhancement models</li>
+            <li>Click "Process Image" to enhance the image</li>
+            <li>Save the enhanced image using File > Save Enhanced</li>
+        </ol>
+        
+        <h3>Advanced Features:</h3>
+        <ul>
+            <li>Select a region of interest (ROI) for targeted processing</li>
+            <li>Compare original and enhanced images with side-by-side, overlay, or split views</li>
+            <li>View histograms to analyze image quality</li>
+            <li>Toggle between foundational and novel AI models</li>
+        </ul>
+        """
+        
+        QMessageBox.information(self, "Help", help_text)
+    
+    
+    
+    
+    
+
+    
+    
     def open_image(self):
         """Open an image file dialog."""
         # Get supported formats
@@ -920,3 +1163,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Error saving enhanced image: {e}")
             QMessageBox.critical
+            
+            
+            
+            

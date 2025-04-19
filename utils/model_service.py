@@ -212,21 +212,13 @@ class ModelService:
         self.config = config or Config()
         self.cache = ModelCache(max_size=8)  # Increased cache size for more models
         
-        # Initialize model directories
+        # Initialize only the base weights directory
         self.base_dir = Path(self.config.get("paths.model_weights_dir", "weights"))
         self.base_dir.mkdir(parents=True, exist_ok=True)
         
-        # Initialize category directories
-        for category in self.MODEL_REGISTRY.keys():
-            category_dir = self.base_dir / category
-            category_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Initialize type directories within each category
-            if "foundational" in self.MODEL_REGISTRY[category]:
-                (self.base_dir / "foundational" / category).mkdir(parents=True, exist_ok=True)
-            if "novel" in self.MODEL_REGISTRY[category]:
-                (self.base_dir / "novel" / category).mkdir(parents=True, exist_ok=True)
-        
+        # Do NOT automatically create category directories
+        # We'll rely on the existing directory structure
+
         # Check PyTorch availability
         if not TORCH_AVAILABLE:
             logger.warning("PyTorch is not available. Models will not work.")

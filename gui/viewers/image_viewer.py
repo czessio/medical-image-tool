@@ -726,3 +726,95 @@ class ImageViewer(QWidget):
         
         # Update scene rect
         self.scene.setSceneRect(QRectF(0, 0, width, height))
+        
+        
+        
+        
+        
+        
+    def zoom_in(self):
+        """Zoom in on the image."""
+        # Increase zoom factor by 20%
+        self.zoom_factor *= 1.2
+        
+        # Apply scaling
+        transform = QTransform()
+        transform.scale(self.zoom_factor, self.zoom_factor)
+        self.graphics_view.setTransform(transform)
+        
+        # Update zoom label
+        self._update_zoom_label()
+        
+        # Emit signal for zoom change
+        self.zoomChanged.emit(self.zoom_factor)
+    
+    def zoom_out(self):
+        """Zoom out from the image."""
+        # Decrease zoom factor by 20%
+        self.zoom_factor /= 1.2
+        
+        # Apply scaling
+        transform = QTransform()
+        transform.scale(self.zoom_factor, self.zoom_factor)
+        self.graphics_view.setTransform(transform)
+        
+        # Update zoom label
+        self._update_zoom_label()
+        
+        # Emit signal for zoom change
+        self.zoomChanged.emit(self.zoom_factor)
+    
+    def zoom_fit(self):
+        """Fit the image to the view."""
+        if self.image_data is None:
+            return
+            
+        # Reset zoom factor
+        self.zoom_factor = 1.0
+        
+        # Fit scene in view
+        self.graphics_view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        
+        # Calculate actual zoom factor based on the view scale
+        transform = self.graphics_view.transform()
+        self.zoom_factor = transform.m11()  # Scaling factor from the transformation matrix
+        
+        # Update zoom label
+        self._update_zoom_label()
+        
+        # Emit signal for zoom change
+        self.zoomChanged.emit(self.zoom_factor)
+    
+    def _update_zoom_label(self):
+        """Update the zoom level display."""
+        # Ensure zoom factor is positive
+        self.zoom_factor = max(0.01, self.zoom_factor)
+        
+        # Update label
+        self.zoom_label.setText(f"Zoom: {self.zoom_factor * 100:.0f}%")
+    
+    def clear_roi(self):
+        """Clear the current ROI selection."""
+        if self.roi_rect is not None:
+            self.scene.removeItem(self.roi_rect)
+            self.roi_rect = None
+            
+        self.roi_selection = None
+        if hasattr(self, 'process_roi_action'):
+            self.process_roi_action.setEnabled(False)
+    
+    def _on_process_roi(self):
+        """Handle the process ROI action."""
+        if self.roi_selection is None:
+            return
+            
+        # Convert ROI from scene coordinates to image coordinates
+        x = int(self.roi_selection.x())
+        y = int(self.roi_selection.y())
+        width = int(self.roi_selection.width())
+        height = int(self.roi_selection.height())
+        
+        # Emit signal with rectangular coordinates (x, y, width, height)
+        rect = (x, y, width, height)
+        if hasattr(self, 'roi_selected'):
+            self.roi_selected.emit(rect)

@@ -238,6 +238,128 @@ class CleaningPipeline:
         self.current_models["artifact_removal"] = model_adapter
         return True
     
+    
+    
+    
+    def set_motion_artifact_model(self, model_id, model_path=None, device=None):
+        """
+        Set the motion artifact removal model for the pipeline.
+        
+        Args:
+            model_id: ID of the motion artifact removal model to use
+            model_path: Path to model weights (None to use default)
+            device: Device to run inference on (None to use default)
+                
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info(f"Setting motion artifact removal model: {model_id}")
+        
+        # Remove existing model if present
+        if self.current_models.get("motion_artifact") is not None:
+            idx = self.pipeline.models.index(self.current_models["motion_artifact"])
+            self.pipeline.models.pop(idx)
+            self.pipeline.model_names.pop(idx)
+            self.current_models["motion_artifact"] = None
+        
+        # Get device from config if not provided
+        if device is None:
+            device = self.config.get("models.motion_artifact.device", "auto")
+        
+        # Create model service if not available
+        if not hasattr(self, 'model_service'):
+            from utils.model_service import ModelService
+            self.model_service = ModelService(self.config)
+        
+        # For motion artifacts, we can reuse the same artifact removal model
+        # but with specialized parameters
+        kwargs = {
+            "device": device,
+            "focus_on_motion": True  # Tell the model to focus on motion artifacts
+        }
+        
+        if model_path:
+            kwargs["model_path"] = model_path
+            
+        model = self.model_service.get_model(model_id, **kwargs)
+        
+        if model is None:
+            logger.error(f"Failed to create motion artifact removal model: {model_id}")
+            return False
+        
+        # Wrap model in adapter for safety
+        from ai.model_adapter import ModelAdapter
+        model_adapter = ModelAdapter(model, f"motion_artifact_{model_id}")
+        
+        self.pipeline.add_model(model_adapter, f"motion_artifact_{model_id}")
+        self.current_models["motion_artifact"] = model_adapter
+        return True
+    
+    
+    
+    def set_segmentation_model(self, model_id, model_path=None, device=None, num_classes=2):
+        """
+        Set the segmentation model for the pipeline.
+        
+        Args:
+            model_id: ID of the segmentation model to use
+            model_path: Path to model weights (None to use default)
+            device: Device to run inference on (None to use default)
+            num_classes: Number of segmentation classes
+                
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info(f"Setting segmentation model: {model_id}")
+        
+        # Remove existing model if present
+        if self.current_models.get("segmentation") is not None:
+            idx = self.pipeline.models.index(self.current_models["segmentation"])
+            self.pipeline.models.pop(idx)
+            self.pipeline.model_names.pop(idx)
+            self.current_models["segmentation"] = None
+        
+        # Get device from config if not provided
+        if device is None:
+            device = self.config.get("models.segmentation.device", "auto")
+        
+        # Create model service if not available
+        if not hasattr(self, 'model_service'):
+            from utils.model_service import ModelService
+            self.model_service = ModelService(self.config)
+        
+        # Get the model from the service
+        kwargs = {
+            "device": device,
+            "num_classes": num_classes
+        }
+        
+        if model_path:
+            kwargs["model_path"] = model_path
+            
+        model = self.model_service.get_model(model_id, **kwargs)
+        
+        if model is None:
+            logger.error(f"Failed to create segmentation model: {model_id}")
+            return False
+        
+        # Wrap model in adapter for safety
+        from ai.model_adapter import ModelAdapter
+        model_adapter = ModelAdapter(model, f"segmentation_{model_id}")
+        
+        self.pipeline.add_model(model_adapter, f"segmentation_{model_id}")
+        self.current_models["segmentation"] = model_adapter
+        return True
+    
+    
+    
+    
+    
+    
+
+    
+    
+    
     def _set_enhancement_model(self, model_id, model_path=None, device=None, task_type='enhancement'):
         """
         Set an enhancement model (ViT-MAE, ResNet, SwinViT) for the pipeline.

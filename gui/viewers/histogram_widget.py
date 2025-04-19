@@ -15,7 +15,7 @@ from PyQt6.QtGui import QPainterPath
 
 logger = logging.getLogger(__name__)
 
-class HistogramWidget(QWidget):
+class HistogramWidget(QFrame):    
     """
     Widget for displaying image histograms.
     

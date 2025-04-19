@@ -32,6 +32,16 @@ class CleaningPanel(QWidget):
     
     # Signals
     cleaningRequested = pyqtSignal(dict)  # Emitted when clean button is pressed
+    clearRoiRequested = pyqtSignal()  # Emitted when clear ROI button is pressed
+    
+
+    
+    def on_clear_roi_clicked(self):
+        """Emit signal to clear ROI when button is clicked."""
+        self.clearRoiRequested.emit()
+    
+    
+    
     
     def __init__(self, parent=None):
         """Initialize the cleaning panel."""

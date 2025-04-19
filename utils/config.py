@@ -20,7 +20,7 @@ class Config:
                 "foundational": {
                     "dncnn_denoiser": {
                         "enabled": True,
-                        "model_path": "weights/foundational/denoising/dncnn_gray_blind.pth"
+                        "model_path": "weights/foundational/denoising/dncnn_25.pth"
                     }
                 },
                 "novel": {
@@ -35,7 +35,7 @@ class Config:
                 "foundational": {
                     "edsr_super_resolution": {
                         "enabled": True,
-                        "model_path": "weights/foundational/super_resolution/edsr_x2.pt"
+                        "model_path": "weights/foundational/super_resolution/RealESRGAN_x2.pth"
                     }
                 },
                 "novel": {
